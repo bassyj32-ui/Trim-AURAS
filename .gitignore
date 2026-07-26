@@ -21,4 +21,14 @@ ENV/
 
 # Temporary media files
 /tmp/
+/output/
 assets/output/
+
+# SQLite WAL / SHM (generated at runtime)
+*.db-shm
+*.db-wal
+
+# IDE temp / debug files
+uvicorn_*.txt
+output_err.txt
+check_err.py

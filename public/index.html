@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#070B0E">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2300E5FF'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%23070B0E'%3E%E2%97%80%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="/manifest.json">
+<link rel="stylesheet" href="/styles.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<title>TrimAURA — Viral Shorts Generator</title>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">&#9670;</div>
+    <h1>TrimAURA</h1>
+  </div>
+  <span class="badge" id="headerStatus">v0.1</span>
+</header>
+
+<div class="container">
+
+  <!-- Hero -->
+  <div class="hero-title">
+    <h2>Turn One Video Into<br><span class="highlight">Viral Shorts.</span></h2>
+    <p>Upload once. Create endlessly.</p>
+    <div class="feature-badges">
+      <span>&#10024; AI-Powered</span>
+      <span>&#128248; Auto Reframe</span>
+      <span>&#128172; Smart Captions</span>
+    </div>
+  </div>
+
+  <!-- New Short Card -->
+  <div class="card">
+    <div class="card-title">New Short</div>
+
+    <input class="url-input" id="urlInput" type="url" placeholder="Google Drive URL" autocomplete="url">
+
+    <div class="separator">OR</div>
+
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/x-matroska,.mp4,.mov,.mkv">
+      <span class="upload-icon">&#11014;&#65039;</span>
+      <span id="uploadText">Drop your video here or tap to browse</span>
+    </div>
+
+    <div style="margin-top:14px">
+      <div class="card-title" style="margin-bottom:10px">Template</div>
+      <div class="template-list" id="templateList"></div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-primary" id="generateBtn" style="flex:1">Generate Shorts &#10024;</button>
+      <button class="btn btn-settings" id="settingsBtn" title="Campaign Settings">&#9881;</button>
+    </div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-text"><span id="progressStatus">PENDING</span><span id="progressPct">0%</span></div>
+    </div>
+  </div>
+
+  <!-- History / Clip Vault -->
+  <div class="card">
+    <div class="card-title">Clip Vault</div>
+    <div id="historyList" class="history-list">
+      <div class="loading">Loading...</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Clip Drawer -->
+<div class="drawer-overlay" id="drawerOverlay"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-handle"></div>
+  <div class="drawer-content">
+    <!-- Clip Switcher -->
+    <div class="clip-nav" id="clipNav"></div>
+
+    <video id="clipVideo" controls playsinline preload="metadata"></video>
+    <div class="title-tabs" id="titleTabs">
+      <button class="title-tab active" data-key="curiosity">Curiosity</button>
+      <button class="title-tab" data-key="direct">Direct</button>
+      <button class="title-tab" data-key="question">Question</button>
+    </div>
+    <div class="title-text" id="titleText"></div>
+    <div style="font-size:13px;color:var(--text2)" id="clipMeta"></div>
+    <div class="drawer-actions">
+      <button class="btn-small btn-copy" id="copyTitleBtn">Copy Title</button>
+      <button class="btn-small btn-copy" id="copyHashtagsBtn">Copy Hashtags</button>
+      <button class="btn-small btn-copy" id="refreshSeoBtn">Refresh SEO</button>
+      <button class="btn-small btn-outline" id="downloadBtn">Download MP4</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settingsOverlay"></div>
+<div class="modal" id="settingsModal">
+  <div class="modal-header">
+    <span class="modal-title">Campaign Settings</span>
+    <button class="modal-close" id="modalClose">&times;</button>
+  </div>
+  <div class="modal-body">
+    <label class="modal-label">Campaign Rules (SEO instructions)</label>
+    <textarea class="modal-textarea" id="campaignRulesInput" rows="3" placeholder="e.g. Use professional tone, include keywords: productivity, AI tools, automation"></textarea>
+
+    <label class="modal-label">Max Clips Per Video</label>
+    <div class="slider-row">
+      <input type="range" class="modal-slider" id="maxClipsSlider" min="1" max="10" value="5">
+      <span class="slider-value" id="maxClipsValue">5</span>
+    </div>
+    <div class="slider-labels">
+      <span>Cost saving</span>
+      <span>More content</span>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn-small btn-outline" id="modalCancel">Cancel</button>
+    <button class="btn-small btn-primary" id="modalConfirm" style="width:auto;padding:9px 24px">Start Generating</button>
+  </div>
+</div>
+
+<script>
+// --- State ---
+let templates = [];
+let currentJobId = null;
+let pollTimer = null;
+let drawerJobId = null;
+let drawerClips = [];
+let drawerClipIndex = 0;
+let selectedClip = null;
+let selectedFile = null;
+let campaignRules = '';
+let maxClips = 5;
+
+// --- DOM ---
+const urlInput = document.getElementById('urlInput');
+const fileInput = document.getElementById('fileInput');
+const uploadZone = document.getElementById('uploadZone');
+const uploadText = document.getElementById('uploadText');
+const templateList = document.getElementById('templateList');
+const generateBtn = document.getElementById('generateBtn');
+const progressWrap = document.getElementById('progressWrap');
+const progressFill = document.getElementById('progressFill');
+const progressStatus = document.getElementById('progressStatus');
+const progressPct = document.getElementById('progressPct');
+const historyEl = document.getElementById('historyList');
+const drawerOverlay = document.getElementById('drawerOverlay');
+const drawer = document.getElementById('drawer');
+const clipVideo = document.getElementById('clipVideo');
+const clipNav = document.getElementById('clipNav');
+const titleText = document.getElementById('titleText');
+const clipMeta = document.getElementById('clipMeta');
+const titleTabs = document.getElementById('titleTabs');
+const copyTitleBtn = document.getElementById('copyTitleBtn');
+const copyHashtagsBtn = document.getElementById('copyHashtagsBtn');
+const refreshSeoBtn = document.getElementById('refreshSeoBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const toast = document.getElementById('toast');
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsOverlay = document.getElementById('settingsOverlay');
+const settingsModal = document.getElementById('settingsModal');
+const modalClose = document.getElementById('modalClose');
+const modalCancel = document.getElementById('modalCancel');
+const modalConfirm = document.getElementById('modalConfirm');
+const campaignRulesInput = document.getElementById('campaignRulesInput');
+const maxClipsSlider = document.getElementById('maxClipsSlider');
+const maxClipsValue = document.getElementById('maxClipsValue');
+
+// --- File Upload UI ---
+uploadZone.addEventListener('click', () => fileInput.click());
+uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) {
+    fileInput.files = e.dataTransfer.files;
+    handleFileSelect(e.dataTransfer.files[0]);
+  }
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) handleFileSelect(fileInput.files[0]);
+});
+
+function handleFileSelect(file) {
+  selectedFile = file;
+  uploadText.textContent = file.name;
+  uploadZone.classList.add('has-file');
+  urlInput.value = '';
+}
+
+// --- Settings Modal ---
+function openSettings() {
+  campaignRulesInput.value = campaignRules;
+  maxClipsSlider.value = maxClips;
+  maxClipsValue.textContent = maxClips;
+  settingsOverlay.classList.add('open');
+  settingsModal.classList.add('open');
+}
+
+function closeSettings() {
+  settingsOverlay.classList.remove('open');
+  settingsModal.classList.remove('open');
+}
+
+settingsBtn.addEventListener('click', openSettings);
+settingsOverlay.addEventListener('click', closeSettings);
+modalClose.addEventListener('click', closeSettings);
+modalCancel.addEventListener('click', closeSettings);
+
+maxClipsSlider.addEventListener('input', () => {
+  maxClipsValue.textContent = maxClipsSlider.value;
+});
+
+modalConfirm.addEventListener('click', () => {
+  campaignRules = campaignRulesInput.value.trim();
+  maxClips = parseInt(maxClipsSlider.value);
+  closeSettings();
+  showToast('Settings saved: ' + maxClips + ' clips max');
+});
+
+// --- Templates ---
+async function loadTemplates() {
+  try {
+    const res = await fetch('/api/templates');
+    templates = await res.json();
+    templateList.innerHTML = templates.map((t,i) =>
+      `<div class="template-card${i===0?' selected':''}" data-id="${t.id}">
+        <span class="emoji">${t.id==='blurpad_v1'?'🎬':t.id==='podcast_split_v1'?'🎙️':'📼'}</span>
+        ${t.name}
+      </div>`
+    ).join('');
+    templateList.querySelectorAll('.template-card').forEach(el => {
+      el.addEventListener('click', () => {
+        templateList.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+        el.classList.add('selected');
+      });
+    });
+  } catch(e) {
+    templateList.innerHTML = '<div style="color:var(--red);font-size:13px">Failed to load templates</div>';
+  }
+}
+
+// --- Vault / History ---
+async function loadHistory() {
+  try {
+    const [jobsRes, clipsRes] = await Promise.all([
+      fetch('/api/jobs'),
+      fetch('/api/clips')
+    ]);
+    const jobs = await jobsRes.json();
+    const clips = await clipsRes.json();
+
+    if (jobs.length === 0) {
+      historyEl.innerHTML = `<div class="empty-state"><span class="emoji">🎬</span><p>Your generated shorts will appear here.<br>Start by uploading a video.</p></div>`;
+      return;
+    }
+
+    historyEl.innerHTML = jobs.map(j => {
+      const isCompleted = j.status === 'COMPLETED';
+      const jobClips = clips.filter(c => c.job_id === j.job_id);
+      return `
+      <div class="history-item" data-id="${j.job_id}">
+        <div class="top">
+          <div>
+            <div class="title">${escHtml(j.title)}</div>
+            <div class="meta">${j.clips_count} clip${j.clips_count!==1?'s':''} · ${timeAgo(j.created_at)}</div>
+          </div>
+          <span class="status-${j.status}">${j.status}</span>
+        </div>
+        ${isCompleted ? `
+        <div class="history-actions">
+          <button class="btn-small btn-vault vault-view" data-id="${j.job_id}">&#9654; View</button>
+          <button class="btn-small btn-vault vault-download-all" data-id="${j.job_id}">&#11015; All</button>
+          <button class="btn-small btn-vault vault-generate" data-id="${j.job_id}">+ Generate</button>
+        </div>` : ''}
+      </div>`;
+    }).join('');
+
+    // Wire history item click = open drawer
+    historyEl.querySelectorAll('.history-item').forEach(el => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.vault-view, .vault-download-all, .vault-generate')) return;
+        openDrawer(parseInt(el.dataset.id));
+      });
+    });
+
+    // Wire vault buttons
+    historyEl.querySelectorAll('.vault-view').forEach(b => {
+      b.addEventListener('click', (e) => { e.stopPropagation(); openDrawer(parseInt(b.dataset.id)); });
+    });
+    historyEl.querySelectorAll('.vault-download-all').forEach(b => {
+      b.addEventListener('click', (e) => { e.stopPropagation(); downloadAllClips(parseInt(b.dataset.id)); });
+    });
+    historyEl.querySelectorAll('.vault-generate').forEach(b => {
+      b.addEventListener('click', (e) => { e.stopPropagation(); generateMore(parseInt(b.dataset.id)); });
+    });
+
+  } catch(e) {
+    historyEl.innerHTML = '<div style="color:var(--red);font-size:13px;text-align:center">Failed to load vault</div>';
+  }
+}
+
+// --- Generate More ---
+async function generateMore(jobId) {
+  if (!confirm('Generate 3 more clips from this video?')) return;
+  showToast('Generating more clips...');
+  currentJobId = jobId;
+  try {
+    await fetch(`/api/jobs/${jobId}/generate-more`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({count: 3})
+    });
+    progressWrap.classList.add('active');
+    setProgress('ANALYZING', 0);
+    startPolling(jobId);
+  } catch {
+    showToast('Failed to start generation');
+  }
+}
+
+// --- Download All ---
+async function downloadAllClips(jobId) {
+  try {
+    const res = await fetch(`/api/jobs/${jobId}`);
+    const job = await res.json();
+    for (const c of job.clips) {
+      await downloadSingleClip(c.clip_id);
+    }
+    showToast('Downloads started');
+  } catch {
+    showToast('Download failed');
+  }
+}
+
+// --- Submit Job ---
+generateBtn.addEventListener('click', async () => {
+  const templateId = templateList.querySelector('.template-card.selected')?.dataset.id || 'blurpad_v1';
+  const hasFile = selectedFile !== null;
+  const url = urlInput.value.trim();
+
+  if (!hasFile && !url) { showToast('Select a file or enter a Google Drive URL'); return; }
+
+  generateBtn.disabled = true;
+  generateBtn.textContent = 'Processing...';
+  progressWrap.classList.add('active');
+  setProgress('PENDING', 0);
+
+  try {
+    let res;
+    if (hasFile) {
+      const form = new FormData();
+      form.append('file', selectedFile);
+      form.append('template_id', templateId);
+      form.append('campaign_rules', campaignRules);
+      form.append('max_clips', maxClips.toString());
+      res = await fetch('/api/jobs/upload', { method: 'POST', body: form });
+    } else {
+      res = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          title: url.split('/').pop() || 'Untitled',
+          source_url: url,
+          template_id: templateId,
+          campaign_rules: campaignRules,
+          max_clips: maxClips
+        })
+      });
+    }
+    const data = await res.json();
+    currentJobId = data.job_id;
+    startPolling(currentJobId);
+  } catch(e) {
+    showToast('Failed to create job');
+    generateBtn.disabled = false;
+    generateBtn.textContent = 'Generate Shorts ✨';
+  }
+});
+
+// --- Polling (replaces SSE for Modal compatibility) ---
+function startPolling(jobId) {
+  if (pollTimer) clearInterval(pollTimer);
+
+  pollTimer = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/poll`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setProgress(data.status, data.progress);
+
+      if (data.status === 'COMPLETED') {
+        clearInterval(pollTimer);
+        pollTimer = null;
+        generateBtn.disabled = false;
+        generateBtn.textContent = 'Generate Shorts ✨';
+        progressWrap.classList.remove('active');
+        selectedFile = null;
+        uploadText.textContent = 'Drop your video here or tap to browse';
+        uploadZone.classList.remove('has-file');
+        fileInput.value = '';
+        loadHistory();
+        showToast('Shorts generated!');
+      }
+      if (data.status === 'FAILED') {
+        clearInterval(pollTimer);
+        pollTimer = null;
+        generateBtn.disabled = false;
+        generateBtn.textContent = 'Generate Shorts ✨';
+        showToast('Failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch(e) {
+      // Silently retry on next interval
+    }
+  }, 2000);
+}
+
+function setProgress(status, pct) {
+  progressFill.style.width = pct + '%';
+  progressStatus.textContent = status;
+  progressPct.textContent = pct + '%';
+}
+
+// --- Drawer ---
+async function openDrawer(jobId) {
+  try {
+    const res = await fetch(`/api/jobs/${jobId}`);
+    const job = await res.json();
+    const clips = job.clips;
+    if (clips.length === 0) { showToast('No clips available'); return; }
+
+    drawerJobId = jobId;
+    drawerClips = clips;
+    drawerClipIndex = 0;
+
+    renderClipNav();
+    selectClip(0);
+    drawerOverlay.classList.add('open');
+    drawer.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  } catch(e) {
+    showToast('Failed to load clip');
+  }
+}
+
+function renderClipNav() {
+  clipNav.innerHTML = drawerClips.map((c, i) =>
+    `<button class="clip-dot${i===0?' active':''}" data-index="${i}">${i+1}</button>`
+  ).join('');
+  clipNav.querySelectorAll('.clip-dot').forEach(el => {
+    el.addEventListener('click', () => selectClip(parseInt(el.dataset.index)));
+  });
+}
+
+function selectClip(index) {
+  drawerClipIndex = index;
+  selectedClip = drawerClips[index];
+  showClip(selectedClip);
+  clipNav.querySelectorAll('.clip-dot').forEach((d, i) => {
+    d.classList.toggle('active', i === index);
+  });
+}
+
+function showClip(clip) {
+  clipVideo.src = clip.r2_url;
+  clipVideo.load();
+  setActiveTitle('curiosity');
+  updateClipMeta(clip);
+  downloadBtn.onclick = () => downloadSingleClip(clip.clip_id);
+}
+
+function setActiveTitle(key) {
+  const titles = {curiosity: selectedClip.titles.curiosity, direct: selectedClip.titles.direct, question: selectedClip.titles.question};
+  titleText.textContent = titles[key] || 'No title';
+  document.querySelectorAll('.title-tab').forEach(t => t.classList.toggle('active', t.dataset.key === key));
+}
+
+document.querySelectorAll('.title-tab').forEach(tab => {
+  tab.addEventListener('click', () => setActiveTitle(tab.dataset.key));
+});
+
+function updateClipMeta(clip) {
+  clipMeta.textContent = `${clip.duration}s · ${clip.hashtags || ''}`;
+}
+
+drawerOverlay.addEventListener('click', closeDrawer);
+
+function closeDrawer() {
+  drawerOverlay.classList.remove('open');
+  drawer.classList.remove('open');
+  document.body.style.overflow = '';
+  clipVideo.pause();
+}
+
+// --- Refresh SEO ---
+refreshSeoBtn.addEventListener('click', async () => {
+  if (!selectedClip) return;
+  const clipId = selectedClip.clip_id;
+  refreshSeoBtn.disabled = true;
+  refreshSeoBtn.textContent = 'Refreshing...';
+  try {
+    const res = await fetch(`/api/clips/${clipId}/refresh-seo`, { method: 'POST' });
+    const data = await res.json();
+    // Update local state
+    selectedClip.titles = data.titles;
+    selectedClip.description = data.description;
+    selectedClip.hashtags = data.hashtags;
+    setActiveTitle(document.querySelector('.title-tab.active')?.dataset.key || 'curiosity');
+    updateClipMeta(selectedClip);
+    showToast('SEO refreshed!');
+  } catch {
+    showToast('Refresh failed');
+  } finally {
+    refreshSeoBtn.disabled = false;
+    refreshSeoBtn.textContent = 'Refresh SEO';
+  }
+});
+
+// --- Download ---
+async function downloadSingleClip(clipId) {
+  try {
+    const res = await fetch(`/api/clips/${clipId}/download`);
+    const data = await res.json();
+    if (data.download_url) {
+      const a = document.createElement('a');
+      a.href = data.download_url;
+      a.download = `trimaura_clip_${clipId}.mp4`;
+      a.click();
+    }
+  } catch {
+    showToast('Download failed');
+  }
+}
+
+// --- Copy ---
+copyTitleBtn.addEventListener('click', () => {
+  const active = document.querySelector('.title-tab.active');
+  const key = active ? active.dataset.key : 'curiosity';
+  const text = selectedClip.titles[key] || '';
+  copyText(text, 'Title copied!');
+});
+
+copyHashtagsBtn.addEventListener('click', () => {
+  copyText(selectedClip.hashtags || '', 'Hashtags copied!');
+});
+
+async function copyText(text, msg) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(msg);
+  } catch {
+    showToast('Copy failed');
+  }
+}
+
+// --- Helpers ---
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+function timeAgo(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return 'yesterday';
+  if (days < 7) return days + 'd ago';
+  return new Date(iso).toLocaleDateString();
+}
+
+function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// --- Init ---
+loadTemplates();
+loadHistory();
+setInterval(loadHistory, 10000);
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js');
+}
+</script>
+
+</body>
+</html>
