@@ -120,7 +120,7 @@ _PIPELINE_KWARGS = dict(
 )
 
 
-@app.function(timeout=1200, **_PIPELINE_KWARGS)
+@app.function(timeout=3600, **_PIPELINE_KWARGS)
 def process_pipeline(job_id: int):
     _write_status(job_id, "DOWNLOADING", 10)
     try:

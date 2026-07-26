@@ -1,0 +1,20 @@
+{
+  "id": "brand_bold_v1",
+  "name": "Brand Bold v1",
+  "description": "Professional #2 'Bold' style — clean white serif text, gold accents, elegant frame. Built for business, finance, and coaching content.",
+  "canvas": { "width": 1080, "height": 1920, "fps": 30 },
+  "video_slot": {
+    "width": 1080, "height": 1080,
+    "x_offset": 0, "y_offset": 420,
+    "fit_mode": "contain"
+  },
+  "overlay_image": "overlay.png",
+  "subtitles": {
+    "alignment": 2, "margin_v": 180,
+    "font_name": "Georgia", "font_size": 28,
+    "primary_color": "&H00FFFFFF",
+    "highlight_color": "&H00D4AF37",
+    "outline_color": "&H00333333",
+    "outline_width": 2
+  }
+}

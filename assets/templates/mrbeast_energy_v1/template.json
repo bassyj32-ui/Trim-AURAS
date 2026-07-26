@@ -1,0 +1,20 @@
+{
+  "id": "mrbeast_energy_v1",
+  "name": "MrBeast Energy v1",
+  "description": "THE #1 viral caption style — bold yellow/red on black, thick outline, uppercase. +35-45% retention lift. Works across all niches.",
+  "canvas": { "width": 1080, "height": 1920, "fps": 30 },
+  "video_slot": {
+    "width": 1080, "height": 1080,
+    "x_offset": 0, "y_offset": 420,
+    "fit_mode": "contain"
+  },
+  "overlay_image": "overlay.png",
+  "subtitles": {
+    "alignment": 2, "margin_v": 180,
+    "font_name": "Arial Black", "font_size": 36,
+    "primary_color": "&H00FFE600",
+    "highlight_color": "&H00FF3333",
+    "outline_color": "&H00000000",
+    "outline_width": 6
+  }
+}

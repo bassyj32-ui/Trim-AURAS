@@ -1,7 +1,7 @@
 {
   "id": "blurpad_v1",
   "name": "Blur Pad v1",
-  "description": "Video centered on 9:16 canvas with blurred background and bottom subtitles.",
+  "description": "Clean universal baseline — centered video on blurred background, white subtitles with cyan highlights. Works for any niche.",
   "canvas": { "width": 1080, "height": 1920, "fps": 30 },
   "video_slot": {
     "width": 1080, "height": 1080,

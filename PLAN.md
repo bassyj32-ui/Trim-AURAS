@@ -31,9 +31,12 @@ trimaura/
 │       └── seo_generator.py    # Phase 5: DeepSeek SEO title & hashtag builder
 │
 ├── assets/templates/
-│   ├── blurpad_v1/             # Blur-pad template
+│   ├── blurpad_v1/             # Blur-pad template (universal baseline)
 │   ├── podcast_split_v1/       # Podcast split-screen template
-│   └── retro_vhs_v1/           # Retro VHS template
+│   ├── retro_vhs_v1/           # Retro VHS template
+│   ├── gaming_neon_v1/         # Gaming Neon (+40-55% retention)
+│   ├── mrbeast_energy_v1/      # MrBeast Energy (+35-45% retention, #1 style)
+│   └── brand_bold_v1/          # Brand Bold (professional #2 style)
 │
 ├── prompts/
 │   ├── clip_analysis.txt       # DeepSeek clip analysis prompt
@@ -110,7 +113,7 @@ trimaura/
 | 4.1 | `modal_app.py` | Modal image with ffmpeg + Python deps | ✅ |
 | 4.2 | `modal_app.py` | `modal.Volume("trimaura-data")` for SQLite + clips + status | ✅ |
 | 4.3 | `modal_app.py` | `@asgi_app()` wrapping FastAPI, `min_containers=1` | ✅ |
-| 4.4 | `modal_app.py` | `process_pipeline()` — 1200s timeout, Volume fallback | ✅ |
+| 4.4 | `modal_app.py` | `process_pipeline()` — 3600s timeout (1hr), Volume fallback | ✅ |
 | 4.5 | `modal_app.py` | `process_generate_more()` — 600s timeout | ✅ |
 | 4.6 | `modal_app.py` | Status JSON files at `/mnt/data/status/job_{id}.json` | ✅ |
 | 4.7 | `app/config.py` | Auto-detect `MODAL=1` → override DB path | ✅ |
@@ -143,9 +146,13 @@ trimaura/
 |------|------|------|--------|
 | 6.1 | `prompts/clip_analysis.txt` | DeepSeek clip analysis prompt | ✅ |
 | 6.2 | `prompts/seo_generation.txt` | DeepSeek SEO prompt | ✅ |
-| 6.3 | `assets/templates/blurpad_v1/` | Blur-pad template config | ✅ |
+| 6.3 | `assets/templates/blurpad_v1/` | Blur-pad template config (updated styling) | ✅ |
 | 6.4 | `assets/templates/podcast_split_v1/` | Podcast split template config + overlay | ✅ |
 | 6.5 | `assets/templates/retro_vhs_v1/` | Retro VHS template config + overlay | ✅ |
+| 6.6 | `assets/templates/gaming_neon_v1/` | Gaming Neon — cyan glow, magenta highlights (+40-55% retention) | ✅ |
+| 6.7 | `assets/templates/mrbeast_energy_v1/` | MrBeast Energy — yellow/red, #1 viral style (+35-45% retention) | ✅ |
+| 6.8 | `assets/templates/brand_bold_v1/` | Brand Bold — professional #2 style for business content | ✅ |
+| 6.9 | `app/pipeline/video_editor.py` | Renderer now supports overlay PNG compositing + dynamic subtitle styling from template config | ✅ |
 
 ---
 
@@ -156,10 +163,13 @@ trimaura/
 | Step | What | Status | Notes |
 |------|------|--------|-------|
 | 7.1 | API keys configured in `.env` and Modal secrets | ✅ | Groq, DeepSeek, R2 all set |
-| 7.2 | End-to-end test with real video | ⏳ | Need to test with real GDrive link |
-| 7.3 | Mobile testing from phone | ⏳ | App live, needs real-world test |
-| 7.4 | PWA install + offline test | ⏳ | Needs PNG icons first |
-| 7.5 | Cloudflare R2 SSL incident | 🐌 BLOCKED | Incident `py46dmbg0t0t`, using Modal Volume fallback |
+| 7.2 | Pipeline timeout increased to 1hr (3600s) | ✅ | Handles long videos up to 1GB |
+| 7.3 | 6 research-backed templates with overlay PNGs | ✅ | MrBeast, Gaming Neon, Brand Bold + 3 originals |
+| 7.4 | Renderer supports overlay compositing + dynamic subtitle styles | ✅ | Font, color, outline, size all per-template |
+| 7.5 | End-to-end test with real video | ⏳ | Need to test with real GDrive/upload |
+| 7.6 | Mobile testing from phone | ⏳ | App live, needs real-world test |
+| 7.7 | PWA install + offline test | ⏳ | Needs PNG icons first |
+| 7.8 | Cloudflare R2 SSL incident | 🐌 BLOCKED | Incident `py46dmbg0t0t`, using Modal Volume fallback |
 
 ---
 

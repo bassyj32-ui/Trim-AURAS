@@ -1,7 +1,7 @@
 {
   "id": "retro_vhs_v1",
   "name": "Retro VHS v1",
-  "description": "VHS-styled vertical video with scanlines, color bleed, and retro subtitles.",
+  "description": "VHS-styled vertical video with scanlines, VHS tracking bars, and retro yellow subtitles. Best for nostalgic/gaming content.",
   "canvas": { "width": 1080, "height": 1920, "fps": 30 },
   "video_slot": {
     "width": 1080, "height": 1080,
@@ -11,10 +11,10 @@
   "overlay_image": "overlay.png",
   "subtitles": {
     "alignment": 2, "margin_v": 180,
-    "font_name": "Courier New", "font_size": 26,
+    "font_name": "Courier New", "font_size": 28,
     "primary_color": "&H00FFCC00",
     "highlight_color": "&H00FF4444",
     "outline_color": "&H00000000",
-    "outline_width": 2
+    "outline_width": 3
   }
 }

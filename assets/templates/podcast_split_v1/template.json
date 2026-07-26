@@ -1,7 +1,7 @@
 {
   "id": "podcast_split_v1",
-  "name": "Podcast Split Screen v1",
-  "description": "Video centered with PNG overlay frame and bottom animated subtitles.",
+  "name": "Podcast Split v1",
+  "description": "Video centered with PNG overlay frame, clean white subtitles with subtle bottom bar. Built for podcast clips and talking heads.",
   "canvas": { "width": 1080, "height": 1920, "fps": 30 },
   "video_slot": {
     "width": 1080, "height": 1080,
@@ -10,10 +10,10 @@
   },
   "overlay_image": "overlay.png",
   "subtitles": {
-    "alignment": 2, "margin_v": 180,
+    "alignment": 2, "margin_v": 200,
     "font_name": "Arial", "font_size": 28,
     "primary_color": "&H00FFFFFF",
-    "highlight_color": "&H0000FFFF",
+    "highlight_color": "&H00FFE600",
     "outline_color": "&H00000000",
     "outline_width": 3
   }

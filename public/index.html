@@ -236,7 +236,7 @@ async function loadTemplates() {
     templates = await res.json();
     templateList.innerHTML = templates.map((t,i) =>
       `<div class="template-card${i===0?' selected':''}" data-id="${t.id}">
-        <span class="emoji">${t.id==='blurpad_v1'?'🎬':t.id==='podcast_split_v1'?'🎙️':'📼'}</span>
+        <span class="emoji">${({'blurpad_v1':'🎬','podcast_split_v1':'🎙️','retro_vhs_v1':'📼','gaming_neon_v1':'🎮','mrbeast_energy_v1':'🔥','brand_bold_v1':'💼'})[t.id]||'🎬'}</span>
         ${t.name}
       </div>`
     ).join('');
