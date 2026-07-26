@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     r2_bucket_name: str = "trimaura-clips"
     r2_public_domain: str = ""
 
+    # Sentry
+    sentry_dsn: str = ""
+
     # App
     database_url: str = "sqlite:///./trimaura.db"
     app_env: str = "development"

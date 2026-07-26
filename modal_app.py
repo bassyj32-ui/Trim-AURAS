@@ -46,6 +46,7 @@ image = (
         "tenacity>=9.0.0",
         "httpx>=0.27.0",
         "python-dotenv>=1.0.1",
+        "sentry-sdk>=2.0.0",
     )
     .env({"MODAL": "1"})
     .add_local_dir("./app", remote_path="/root/app", copy=True)

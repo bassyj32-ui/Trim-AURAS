@@ -166,10 +166,11 @@ trimaura/
 | 7.2 | Pipeline timeout increased to 1hr (3600s) | ✅ | Handles long videos up to 1GB |
 | 7.3 | 6 research-backed templates with overlay PNGs | ✅ | MrBeast, Gaming Neon, Brand Bold + 3 originals |
 | 7.4 | Renderer supports overlay compositing + dynamic subtitle styles | ✅ | Font, color, outline, size all per-template |
-| 7.5 | End-to-end test with real video | ⏳ | Need to test with real GDrive/upload |
-| 7.6 | Mobile testing from phone | ⏳ | App live, needs real-world test |
-| 7.7 | PWA install + offline test | ⏳ | Needs PNG icons first |
-| 7.8 | Cloudflare R2 SSL incident | 🐌 BLOCKED | Incident `py46dmbg0t0t`, using Modal Volume fallback |
+| 7.5 | Sentry error monitoring (backend + frontend) | ✅ | Free tier, 5k errors/mo. Auto-captures API crashes + JS errors |
+| 7.6 | End-to-end test with real video | ⏳ | Need to test with real GDrive/upload |
+| 7.7 | Mobile testing from phone | ⏳ | App live, needs real-world test |
+| 7.8 | PWA install + offline test | ⏳ | Needs PNG icons first |
+| 7.9 | Cloudflare R2 SSL incident | 🐌 BLOCKED | Incident `py46dmbg0t0t`, using Modal Volume fallback |
 
 ---
 
