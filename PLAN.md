@@ -233,6 +233,90 @@ This phase is what turns TrimAURA from a personal tool into a SaaS product servi
 
 ---
 
+## 💰 Cost Analysis
+
+### Current Personal Plan (Free)
+
+> You're on **Modal Hobby** ($30/mo free credits) + **Groq Free Tier** + **DeepSeek pay-as-you-go** (~$5 prepaid).
+
+| Service | What You Pay | How It's Free |
+|---------|-------------|---------------|
+| **Modal compute** | **$0/mo** (within free $30 credits) | Modal gives $30/mo free to devs. You use ~$11 |
+| **Groq Whisper V3** | **$0/mo** | Free tier: 3,000 calls/day, 1,000 min audio/day |
+| **DeepSeek V4 Flash** | **~$0.0001/video** ($5 prepaid ≈ 50,000 videos) | Extremely cheap API pricing |
+| **Cloudflare R2** | **$0/mo** (disabled) | Would be free tier anyway (10GB, 1M reads/mo) |
+| **Modal Volume** | **Included** | Storage within free tier |
+| **Total** | **~$0-1/mo** | $5 DeepSeek deposit lasts years |
+
+#### Per-Video Cost Breakdown (40 videos/mo = 10/week)
+
+| Step | Cost per Video | Annual Cost |
+|------|---------------|-------------|
+| Download (Modal CPU) | ~$0.002 | ~$0.96 |
+| Transcribe (Groq free) | $0 | $0 |
+| Analyze (DeepSeek) | ~$0.00004 | ~$0.02 |
+| Render 5 clips (Modal CPU) | ~$0.02 | ~$9.60 |
+| SEO (DeepSeek) | ~$0.00007 | ~$0.03 |
+| **Pipeline total** | **~$0.025** | **~$12** |
+| Keep-warm container | $9/mo flat | ~$108 |
+| **Grand total** | **~$11/mo** | **~$120/yr** |
+
+> **Note:** You've set a $28/mo Modal spend cap. At 40 videos/month, you're at ~40% of that cap. Room to grow.
+
+### 🚀 Future Cost Projections (6+ months away)
+
+#### 100 Users (≈500 videos/mo, 5 clips each)
+
+| Item | Cost/mo | Notes |
+|------|---------|-------|
+| Modal compute (renders) | $30-50 | Bulk of cost |
+| Modal keep-warm (auto-scale) | $20 | Multiple containers |
+| PostgreSQL (Supabase) | $25 | Free tier on old plan |
+| Cloudflare R2 (fixed by then) | $10 | CDN + storage |
+| Stripe fees | 2.9% + $0.30/txn | Only if monetizing |
+| Monitoring (Sentry free) | $0 | Developer tier |
+| **Total** | **~$50-100/mo** | Before revenue |
+
+#### 1,000 Users (≈5,000 videos/mo, 5 clips each)
+
+| Item | Cost/mo | Notes |
+|------|---------|-------|
+| Modal compute (renders) | $200-400 | Bulk of cost |
+| Modal auto-scale infra | $100 | Load-balanced containers |
+| PostgreSQL (Supabase Pro) | $50 | Team plan |
+| Cloudflare R2 CDN | $50 | Egress + storage |
+| Redis queue | $20 | Job queue |
+| Stripe fees | 2.9% + $0.30/txn | Only if monetizing |
+| Monitoring (Datadog/Grafana) | $50 | Optional |
+| **Total** | **~$400-600/mo** | Before revenue |
+
+> These numbers assume **no revenue** from users. If you charge even $5/user/mo:
+> - 100 users × $5 = **$500/mo** → profitable
+> - 1,000 users × $5 = **$5,000/mo** → very profitable
+
+---
+
+## 📱 Works On Phone Without R2?
+
+**Yes, absolutely.** Cloudflare R2 being off does not affect phone usage.
+
+| Feature | Works Without R2? | How |
+|---------|------------------|-----|
+| Open app from phone | ✅ Yes | Modal URL loads in any browser |
+| Submit a job | ✅ Yes | Enter GDrive link or upload |
+| Pipeline processing | ✅ Yes | Runs in Modal cloud, not on phone |
+| Clips rendering | ✅ Yes | FFmpeg runs in Modal container |
+| Download clips | ✅ Yes | Served from Modal Volume via API |
+| Video player in drawer | ✅ Yes | Streams from API download endpoint |
+| Clip vault (14-day) | ✅ Yes | SQLite + clips on Modal Volume |
+| Generate More clips | ❌ No | Requires R2 for saved source (blocked until R2 fixed) |
+| PWA install to home screen | ✅ Yes | HTTPS ready, manifest ready |
+| Offline access | ⏳ Needs PNG icons | Service worker works, icons pending |
+
+**In short:** Everything except "Generate More" works from your phone right now. R2 only adds faster global download speeds — it's not required for the app to function.
+
+---
+
 ## 🐛 Known Issues
 
 | Issue | Status | Workaround |
