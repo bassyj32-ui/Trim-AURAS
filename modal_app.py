@@ -122,10 +122,30 @@ _PIPELINE_KWARGS = dict(
 
 
 @app.function(timeout=3600, **_PIPELINE_KWARGS)
-def process_pipeline(job_id: int):
+def process_pipeline(job_id: int, job_data: dict | None = None):
     _write_status(job_id, "DOWNLOADING", 10)
     try:
         _ensure_path()
+
+        from app.database import engine, init_db
+
+        init_db()
+
+        # If the job record written by the ASGI container isn't visible yet
+        # (Modal Volume propagation delay), create it locally from the payload
+        # that was passed alongside job_id.
+        if job_data is not None:
+            from sqlmodel import Session
+            from app.models import Job
+
+            with Session(engine) as session:
+                existing = session.get(Job, job_id)
+                if existing is None:
+                    job = Job(**{k: v for k, v in job_data.items() if k != "id"})
+                    job.id = job_id
+                    session.add(job)
+                    session.commit()
+
         import asyncio
         from app.pipeline.orchestrator import execute_pipeline
 
@@ -142,6 +162,11 @@ def process_generate_more(job_id: int, count: int = 3):
     _write_status(job_id, "ANALYZING", 40)
     try:
         _ensure_path()
+
+        # Force Modal Volume to sync so the SQLite DB written by the ASGI
+        # container is visible to this worker container.
+        data_volume.reload()
+
         import asyncio
         from app.pipeline.orchestrator import generate_more_clips
 

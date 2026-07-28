@@ -1,7 +1,7 @@
 # TrimAURA — Build Plan & Roadmap
 
-> **Last updated:** 2026-07-26
-> **Status:** 🟢 MVP deployed on Modal cloud
+> **Last updated:** 2026-07-28
+> **Status:** 🟢 MVP deployed on Modal cloud (v18)
 > **URL:** <https://bassyj32--trimaura-fastapi-app.modal.run>
 
 ***
@@ -49,6 +49,8 @@ trimaura/
 │   └── service-worker.js       # Cache-first service worker
 │
 ├── modal_app.py                # Modal cloud deployment
+├── dev_server.py               # Local dev server (proxies /api/* to Modal)
+├── design/                     # UI/UX design docs (mobile, web)
 ├── PLAN.md                     # ← You are here
 ├── .env
 └── requirements.txt
@@ -121,6 +123,7 @@ trimaura/
 | 4.9  | `app/api/routes.py` | `GET /api/jobs/{id}/poll` endpoint                                                        | ✅      |
 | 4.10 | `public/index.html` | Polling every 2s (replaced SSE)                                                           | ✅      |
 | 4.11 | Deployment          | `modal deploy modal_app.py` → live at `bassyj32--trimaura-fastapi-app.modal.run`          | ✅      |
+| 4.12 | Fix: SQLite Modal Volume sync | Pass job payload to `process_pipeline.spawn.aio()`, add retry to `_get_job()`, remove `data_volume.reload()` | ✅ v18  |
 
 ***
 
@@ -374,6 +377,7 @@ Total effort: **~2 hours.** After that, your clips will be 80-90% of Opus qualit
 | `generate_more` requires R2 source key     | 🟡 Needs R2 fix | Feature unavailable until R2 is back                  |
 | PWA icons are SVG data URIs (blank on iOS) | 🟡 Low priority | Add proper PNG icon files                             |
 | No user auth (single-user)                 | 🟡 OK for MVP   | Add auth before onboarding others                     |
+| SQLite Volume sync delay (status propagation) | 🟡 WORKAROUND | Job payload passed to pipeline worker; status files may lag briefly |
 
 ***
 
@@ -389,8 +393,10 @@ modal app logs trimaura --since=30m
 # Check secret
 modal secret list
 
-# Run locally
-cd d:\trae\TrimAURAs\TrimAuras
+# Run locally (API only)
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+# Run dev server (static files + proxy to Modal)
+python dev_server.py
 ```
 

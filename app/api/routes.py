@@ -27,9 +27,9 @@ TEMPLATES_DIR = Path("assets") / "templates"
 if MODAL:
     import modal as _modal
 
-    async def _dispatch_pipeline(job_id: int):
+    async def _dispatch_pipeline(job_id: int, job_data: dict | None = None):
         await _modal.Function.from_name("trimaura", "process_pipeline").spawn.aio(
-            job_id
+            job_id, job_data
         )
 
     async def _dispatch_generate_more(job_id: int, count: int = 3):
@@ -83,7 +83,19 @@ async def create_job(body: CreateJobRequest):
         session.refresh(job)
         job_id = job.id
 
-    await _dispatch_pipeline(job_id)
+    # Send a payload so the Modal worker can recreate the job record locally
+    # if the Volume hasn't synced yet. This bypasses SQLite staleness on Modal
+    # shared Volumes.
+    job_payload = {
+        "id": job_id,
+        "title": body.title,
+        "source_url": body.source_url,
+        "template_id": body.template_id,
+        "campaign_rules": body.campaign_rules or "",
+        "max_clips": body.max_clips,
+        "status": JobStatus.PENDING,
+    }
+    await _dispatch_pipeline(job_id, job_payload)
 
     return CreateJobResponse(
         job_id=job_id,
@@ -118,7 +130,19 @@ async def upload_job(
         session.refresh(job)
         job_id = job.id
 
-    await _dispatch_pipeline(job_id)
+    # Send a payload so the Modal worker can recreate the job record locally
+    # if the Volume hasn't synced yet. This bypasses SQLite staleness on Modal
+    # shared Volumes.
+    job_payload = {
+        "id": job_id,
+        "title": file.filename or "Untitled Upload",
+        "source_url": tmp_path,
+        "template_id": template_id,
+        "campaign_rules": campaign_rules or "",
+        "max_clips": max_clips,
+        "status": JobStatus.PENDING,
+    }
+    await _dispatch_pipeline(job_id, job_payload)
 
     return CreateJobResponse(
         job_id=job_id,

@@ -262,9 +262,20 @@ def _get_clip_transcript_text(segments: list[dict], clip_start: float, clip_end:
     return " ".join(texts)
 
 
-def _get_job(job_id: int) -> Job:
-    with Session(engine) as session:
-        job = session.get(Job, job_id)
-        if not job:
-            raise ValueError(f"Job {job_id} not found")
-        return job
+def _get_job(job_id: int, retries: int = 5) -> Job:
+    """Look up a job by id, retrying up to *retries* times with 2 s delays.
+
+    The retry loop covers the case where the SQLite database was just written
+    on one Modal container and needs to propagate to a newly spawned worker
+    container via the shared Volume.
+    """
+    import time
+
+    for attempt in range(retries):
+        with Session(engine) as session:
+            job = session.get(Job, job_id)
+            if job is not None:
+                return job
+        if attempt < retries - 1:
+            time.sleep(2)
+    raise ValueError(f"Job {job_id} not found after {retries} attempts")

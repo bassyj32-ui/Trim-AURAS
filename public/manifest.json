@@ -4,8 +4,8 @@
   "description": "Turn long videos into viral 9:16 shorts with AI subtitles and SEO.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#070B0E",
-  "theme_color": "#00E5FF",
+  "background_color": "#FAFAFA",
+  "theme_color": "#C9A056",
   "orientation": "portrait",
   "icons": [
     {
