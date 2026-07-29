@@ -26,6 +26,7 @@ def _get_client():
                 region_name="us-east-1",
                 retries={"max_attempts": 3, "mode": "standard"},
             ),
+            verify=settings.r2_verify_ssl,
         )
     return _r2_client
 

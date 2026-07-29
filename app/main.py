@@ -34,7 +34,30 @@ def on_startup():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    import os
+    from app.config import settings, MODAL
+    from app.database import engine
+    url = str(engine.url)
+    # Redact password
+    if "@" in url:
+        prefix, rest = url.split("@", 1)
+        if ":" in prefix:
+            prefix = prefix.rsplit(":", 1)[0] + ":****"
+        url = f"{prefix}@{rest}"
+    settings_url = str(settings.database_url)
+    if "@" in settings_url:
+        prefix, rest = settings_url.split("@", 1)
+        if ":" in prefix:
+            prefix = prefix.rsplit(":", 1)[0] + ":****"
+        settings_url = f"{prefix}@{rest}"
+    return {
+        "status": "ok",
+        "modal_flag": MODAL,
+        "modal_env": os.environ.get("MODAL", "0"),
+        "engine_url": url,
+        "settings_url": settings_url,
+        "env_db_url": os.environ.get("DATABASE_URL", "(not set)")[:50] + "...",
+    }
 
 
 @app.get("/sentry-debug")

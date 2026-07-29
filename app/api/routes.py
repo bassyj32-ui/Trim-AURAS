@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.config import MODAL
-from app.database import engine, force_db_sync
+from app.database import engine
 from app.models import Job, JobStatus, VideoClip, clip_vault_cutoff
 from app.api.sse import event_stream
 from app.pipeline.orchestrator import execute_pipeline, generate_more_clips, refresh_clip_seo
@@ -71,6 +71,13 @@ class GenerateMoreRequest(BaseModel):
 
 @router.post("/jobs", status_code=202)
 async def create_job(body: CreateJobRequest):
+    # V1: only Google Drive URLs are accepted — YouTube etc. disabled
+    if body.source_url and "drive.google.com" not in body.source_url:
+        raise HTTPException(
+            400,
+            "Only Google Drive URLs and local file uploads are supported in V1",
+        )
+
     with Session(engine) as session:
         job = Job(
             title=body.title,
@@ -83,9 +90,6 @@ async def create_job(body: CreateJobRequest):
         session.commit()
         session.refresh(job)
         job_id = job.id
-
-    # Flush SQLite WAL so other connections / containers see this row
-    force_db_sync()
 
     # Send a payload so the Modal worker can recreate the job record locally
     # if the Volume hasn't synced yet. This bypasses SQLite staleness on Modal
@@ -135,9 +139,6 @@ async def upload_job(
         session.commit()
         session.refresh(job)
         job_id = job.id
-
-    # Flush SQLite WAL so other connections / containers see this row
-    force_db_sync()
 
     # Send a payload so the Modal worker can recreate the job record locally
     # if the Volume hasn't synced yet. This bypasses SQLite staleness on Modal

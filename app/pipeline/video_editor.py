@@ -127,7 +127,7 @@ async def execute_render(
             f"pad={sw}:{sh}:(ow-iw)/2:(oh-ih)/2[main];"
             f"[0:v]trim={trim_start}:{trim_end},setpts=PTS-STARTPTS,"
             f"scale={width}:{height}:force_original_aspect_ratio=2,"
-            f"boxblur=20:5,"
+            f"boxblur=5:2,"
             f"crop=trunc(iw/2)*2:trunc(ih/2)*2[bg];"
             f"[bg][main]overlay={sx}:{sy}[withvid];"
         )

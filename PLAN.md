@@ -1,7 +1,7 @@
 # TrimAURA — Build Plan & Roadmap
 
-> **Last updated:** 2026-07-28
-> **Status:** 🟢 MVP deployed on Modal cloud (v18)
+> **Last updated:** 2026-07-30
+> **Status:** 🟢 V1 deployed on Modal cloud — GDrive + local uploads only
 > **URL:** <https://bassyj32--trimaura-fastapi-app.modal.run>
 
 ***
@@ -24,7 +24,7 @@ trimaura/
 │   │
 │   └── pipeline/
 │       ├── orchestrator.py      # Pipeline controller with clip vault features
-│       ├── downloader.py       # Phase 1: yt-dlp & GDrive parser
+│   │   ├── downloader.py       # Phase 1: GDrive-only downloader (YouTube disabled for V1)
 │       ├── transcriber.py      # Phase 2: Groq Whisper V3 (with Tenacity retry)
 │       ├── intelligence.py     # Phase 3: DeepSeek viral moment extractor & titles
 │       ├── video_editor.py     # Phase 4: FFmpeg template applier & renderer
@@ -174,9 +174,13 @@ trimaura/
 | 7.7  | Safe-area CSS for notch phones                                  | ✅          | iPhone X+ notch/home indicator covered                         |
 | 7.8  | iOS PWA support (apple-touch-icon, meta tags)                   | ✅          | Can add to iOS home screen                                     |
 | 7.9  | Touch-optimized UI (tap targets, scroll snap)                   | ✅          | 44px min touch targets, smooth scroll                          |
-| 7.10 | End-to-end test with real video                                 | ⏳          | Need to test with real GDrive/upload                           |
-| 7.11 | Mobile testing from phone                                       | ⏳          | App live, needs real-world test                                |
-| 7.12 | Cloudflare R2 SSL incident                                      | 🐌 BLOCKED | Incident `py46dmbg0t0t`, using Modal Volume fallback           |
+| 7.10 | End-to-end test with real GDrive video                          | ✅          | Tested with Google Drive URL — pipeline completed, 3 clips     |
+| 7.11 | YouTube disabled for V1 (GDrive + local uploads only)           | ✅          | 3-layer guard: frontend, API validation, downloader check      |
+| 7.12 | boxblur=20:5 → 5:2 for faster rendering                        | ✅          | ~3-4x faster blurpad rendering on CPU                          |
+| 7.13 | Fixed missing `Path` import in orchestrator                     | ✅          | Pipeline was crashing at RENDERING stage                       |
+| 7.14 | Database migrated from SQLite → Supabase (PostgreSQL)           | ✅          | `database.py` uses Supabase pooler on Modal, local dev fallback |
+| 7.15 | Mobile testing from phone                                       | ⏳          | App live at URL, needs real-world test                         |
+| 7.16 | Cloudflare R2 SSL incident                                      | 🐌 BLOCKED | Incident `py46dmbg0t0t`, using Modal Volume fallback           |
 
 ***
 
@@ -377,7 +381,8 @@ Total effort: **~2 hours.** After that, your clips will be 80-90% of Opus qualit
 | `generate_more` requires R2 source key     | 🟡 Needs R2 fix | Feature unavailable until R2 is back                  |
 | PWA icons are SVG data URIs (blank on iOS) | 🟡 Low priority | Add proper PNG icon files                             |
 | No user auth (single-user)                 | 🟡 OK for MVP   | Add auth before onboarding others                     |
-| SQLite Volume sync delay (status propagation) | 🟡 WORKAROUND | Job payload passed to pipeline worker; status files may lag briefly |
+| Supabase transaction pool may timeout      | 🟡 OK for MVP   | Modal process_pipeline has 3600s timeout              |
+| Stale status file on Modal Volume          | 🟡 WORKAROUND   | Job payload passed to pipeline worker; read GET /jobs/{id} for real state |
 
 ***
 

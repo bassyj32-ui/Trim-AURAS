@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 from sqlmodel import Session
 
 from app.database import engine
@@ -20,8 +21,6 @@ def _update_job(job_id: int, **kwargs):
                 setattr(job, k, v)
             session.add(job)
             session.commit()
-            from app.database import force_db_sync
-            force_db_sync()
 
 
 def _get_transcript_text(segments: list[dict]) -> str:
@@ -77,6 +76,9 @@ async def execute_pipeline(job_id: int):
         transcript_text = _get_transcript_text(segments)
         seo_data = await execute_seo(transcript_text, campaign_rules=job.campaign_rules or "")
 
+        CLIPS_DIR = Path("/mnt/data/clips")
+        CLIPS_DIR.mkdir(parents=True, exist_ok=True)
+
         with Session(engine) as session:
             db_job = session.get(Job, job_id)
 
@@ -85,15 +87,13 @@ async def execute_pipeline(job_id: int):
                 key = f"clips/{job_id}_{i}.mp4"
                 r2_url = upload_to_r2(rendered_path, key)
                 is_offline = r2_url is None
-                if is_offline:
-                    r2_url = rendered_path  # fall back to local path
 
                 db_clip = VideoClip(
                     job_id=job_id,
                     start_time=clip_info["start"],
                     end_time=clip_info["end"],
                     duration=clip_info["end"] - clip_info["start"],
-                    r2_url=r2_url,
+                    r2_url=rendered_path,       # will update below
                     r2_key=key if not is_offline else "",
                     title_curiosity=seo_data.get("title_curiosity", ""),
                     title_direct=seo_data.get("title_direct", ""),
@@ -102,6 +102,13 @@ async def execute_pipeline(job_id: int):
                     hashtags=seo_data.get("hashtags", ""),
                 )
                 session.add(db_clip)
+                session.flush()  # get db_clip.id before commit
+
+                # Copy to predictable path that the download endpoint can serve
+                clip_serve_path = CLIPS_DIR / f"{job_id}_{db_clip.id}.mp4"
+                import shutil
+                shutil.copy2(rendered_path, str(clip_serve_path))
+                db_clip.r2_url = str(clip_serve_path)
 
             db_job.status = JobStatus.COMPLETED
             db_job.progress_percentage = 100

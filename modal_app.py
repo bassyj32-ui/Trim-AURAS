@@ -41,6 +41,7 @@ image = (
         "groq>=0.9.0",
         "openai>=1.0.0",
         "yt-dlp>=2024.12.0",
+        "psycopg2-binary>=2.9.0",
         "python-multipart>=0.0.12",
         "pydantic-settings>=2.4.0",
         "tenacity>=9.0.0",
@@ -92,7 +93,11 @@ def _ensure_path():
 @app.function(
     image=image,
     volumes={DATA_DIR: data_volume},
-    secrets=[modal.Secret.from_name("trimaura-secrets")],
+    secrets=[
+        modal.Secret.from_name("trimaura-secrets-v2"),
+        modal.Secret.from_name("trimaura-supabase-keys"),
+        modal.Secret.from_name("trimaura-db-url"),
+    ],
     min_containers=1,
     scaledown_window=120,
 )
@@ -141,7 +146,11 @@ def fastapi_app():
 _PIPELINE_KWARGS = dict(
     image=image,
     volumes={DATA_DIR: data_volume},
-    secrets=[modal.Secret.from_name("trimaura-secrets")],
+    secrets=[
+        modal.Secret.from_name("trimaura-secrets-v2"),
+        modal.Secret.from_name("trimaura-supabase-keys"),
+        modal.Secret.from_name("trimaura-db-url"),
+    ],
     scaledown_window=300,
     retries=0,
 )
@@ -163,7 +172,6 @@ def process_pipeline(job_id: int, job_data: dict | None = None):
         if job_data is not None:
             from sqlmodel import Session
             from app.models import Job
-            from app.database import force_db_sync
 
             with Session(engine) as session:
                 existing = session.get(Job, job_id)
@@ -172,7 +180,6 @@ def process_pipeline(job_id: int, job_data: dict | None = None):
                     job.id = job_id
                     session.add(job)
                     session.commit()
-                    force_db_sync()
 
         import asyncio
         from app.pipeline.orchestrator import execute_pipeline

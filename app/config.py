@@ -14,12 +14,17 @@ class Settings(BaseSettings):
     r2_secret_access_key: str = ""
     r2_bucket_name: str = "trimaura-clips"
     r2_public_domain: str = ""
+    r2_verify_ssl: bool = True      # set False behind corporate proxies
+
+    # Supabase (PostgreSQL)
+    supabase_url: str = ""           # e.g. https://xxxx.supabase.co
+    supabase_anon_key: str = ""      # anon/public key (frontend-safe)
 
     # Sentry
     sentry_dsn: str = ""
 
     # App
-    database_url: str = "sqlite:///./trimaura.db"
+    database_url: str = "postgresql://postgres:@localhost:5432/postgres"
     app_env: str = "development"
     port: int = 8000
 
@@ -29,13 +34,9 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # -- Auto-detect Modal environment -------------------------------------------
-# When deployed on Modal, database_url should point to the persistent Volume.
-# Override it here so the rest of the code (models, database, pipeline) works
-# without any changes.
 MODAL = os.environ.get("MODAL") == "1"
 
 if MODAL:
-    settings.database_url = "sqlite:////mnt/data/trimaura.db"
     settings.app_env = "production"
 
 # -- Cloudflare R2 toggle ---------------------------------------------------

@@ -1,29 +1,39 @@
 from sqlmodel import SQLModel, create_engine
 
-from app.config import settings
+from app.config import settings, MODAL
+
+# On Modal we connect via Supabase's shared Supavisor pooler
+# (aws-0-*-pooler.supabase.com) which is IPv4-compatible, avoiding
+# the IPv6 routing issue that plagues the direct db.xxxx.supabase.co
+# endpoint from Modal's network.
+_connect_args = {
+    "connect_timeout": 10,           # fail fast if unreachable
+    "sslmode": "require",            # Supabase always needs SSL
+    "gssencmode": "disable",         # no GSSAPI on Supabase
+}
+
+if MODAL:
+    # The shared pooler uses a different hostname and port.
+    # The .env / secret already has the correct URL for the pooler
+    # (postgresql://postgres.PROJECT_REF:PASSWORD@aws-0-eu-west-1.pooler.supabase.com:6543/postgres)
+    # so nothing extra to do here — just make sure the URL is used as-is.
+    pass
 
 engine = create_engine(
     settings.database_url,
-    connect_args={"check_same_thread": False},
+    connect_args=_connect_args,
     echo=(settings.app_env == "development"),
 )
 
 
 def init_db():
-    with engine.connect() as conn:
-        conn.exec_driver_sql("PRAGMA journal_mode=WAL;")
-        conn.exec_driver_sql("PRAGMA synchronous=FULL;")
-        conn.exec_driver_sql("PRAGMA busy_timeout=5000;")
-        conn.exec_driver_sql("PRAGMA foreign_keys=ON;")
-    SQLModel.metadata.create_all(engine)
+    """Ensure all tables exist.
 
-
-def force_db_sync():
-    """Force a WAL checkpoint so other connections see committed data.
-
-    Uses PASSIVE mode (safe — no readers/writers are blocked).  Call this
-    *after* session.commit() + session.close() when another Modal container
-    or connection needs to read the same SQLite file from a shared Volume.
+    In production (Modal), tables are created via migration.  This call is a
+    safety net for local dev so SQLModel metadata creates what's missing.
     """
-    with engine.connect() as conn:
-        conn.exec_driver_sql("PRAGMA wal_checkpoint(PASSIVE);")
+    try:
+        SQLModel.metadata.create_all(engine)
+    except Exception as exc:
+        import warnings
+        warnings.warn(f"init_db: could not create tables — {exc}")

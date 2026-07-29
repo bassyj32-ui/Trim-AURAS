@@ -16,12 +16,35 @@ def _is_local_path(value: str) -> bool:
     return p.exists() and p.is_file()
 
 
-def execute_download(source: str) -> str:
+def _get_ydl_opts(output_path: str) -> dict:
+    """Return yt-dlp options that try several clients to bypass bot checks."""
+    return {
+        "outtmpl": output_path,
+        "quiet": True,
+        "no_warnings": True,
+        # tv#embed is a combined client that avoids YouTube's sign-in wall.
+        # Also skip webpage/JS parsing to avoid bot-detection triggers.
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["tv#embed"],
+                "player_skip": ["webpage", "js"],
+            }
+        },
+        # Mimic a real browser so we don't get blocked before extraction
+        "user_agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+    }
+
+
+def execute_download(source: str, cookies_file: str | None = None) -> str:
     """Resolve a video source to a local file path.
 
-    Supports:
+    V1 supports:
       - Local file paths (just copies to workspace)
-      - YouTube, Google Drive, Vimeo, TikTok, etc. (downloads via yt-dlp)
+      - Google Drive URLs (downloads via yt-dlp)
     """
     WORKSPACE.mkdir(parents=True, exist_ok=True)
 
@@ -32,10 +55,22 @@ def execute_download(source: str) -> str:
         shutil.copy2(str(src), dest)
         return os.path.abspath(dest)
 
-    # Any URL — let yt-dlp handle it (supports YouTube, GDrive, Vimeo, etc.)
+    # V1: only Google Drive URLs allowed from here
+    if not _is_google_drive(source):
+        raise ValueError(
+            "V1 only supports Google Drive URLs and local file uploads. "
+            f"Got: {source[:80]}"
+        )
+
+    # Google Drive download via yt-dlp
     output_path = str(WORKSPACE / "%(title)s_%(id)s.%(ext)s")
-    with yt_dlp.YoutubeDL({"outtmpl": output_path, "quiet": True, "no_warnings": True}) as ydl:
+    opts = _get_ydl_opts(output_path)
+    if cookies_file and Path(cookies_file).exists():
+        opts["cookiefile"] = cookies_file
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([source])
+
     files = list(WORKSPACE.iterdir())
     if not files:
         raise RuntimeError("Download completed but no file found in workspace")

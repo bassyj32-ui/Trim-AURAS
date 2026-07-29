@@ -510,6 +510,7 @@ generateBtn.addEventListener('click', async () => {
   const url = urlInput.value.trim();
 
   if (!hasFile && !url) { showToast('Select a file or enter a Google Drive URL'); return; }
+  if (url && !url.includes('drive.google.com')) { showToast('Only Google Drive URLs are supported in V1'); return; }
 
   generateBtn.disabled = true;
   generateBtn.textContent = 'Processing...';
