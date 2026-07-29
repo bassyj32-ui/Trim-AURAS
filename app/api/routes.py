@@ -376,6 +376,27 @@ async def download_clip(clip_id: int):
     return {"download_url": clip.r2_url}
 
 
+# --- Admin / Cleanup ---
+
+@router.post("/admin/cleanup", status_code=200)
+def admin_cleanup():
+    """Delete all FAILED and old PENDING jobs. Keeps completed jobs."""
+    from datetime import datetime, timedelta
+    with Session(engine) as session:
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+        jobs = session.exec(select(Job)).all()
+        deleted = 0
+        for j in jobs:
+            if j.status in (JobStatus.FAILED, JobStatus.PENDING) and j.created_at < cutoff:
+                # Soft-delete all clips too
+                for c in j.clips:
+                    c.deleted = True
+                    session.add(c)
+                session.delete(j)
+                deleted += 1
+        session.commit()
+    return {"deleted_jobs": deleted, "message": f"Cleaned up {deleted} old failed/pending jobs."}
+
 # --- Templates ---
 
 @router.get("/templates")

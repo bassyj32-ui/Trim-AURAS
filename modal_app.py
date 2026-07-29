@@ -103,6 +103,32 @@ def fastapi_app():
     for d in (STATUS_DIR, CLIPS_DIR, SOURCES_DIR):
         Path(d).mkdir(parents=True, exist_ok=True)
 
+    # Auto-cleanup old failed/pending jobs on startup
+    try:
+        from app.database import engine, init_db
+        from app.models import Job, JobStatus
+        from sqlmodel import Session, select
+        from datetime import datetime, timedelta
+
+        init_db()
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+        with Session(engine) as session:
+            old_jobs = session.exec(
+                select(Job).where(Job.created_at < cutoff).where(
+                    Job.status.in_([JobStatus.FAILED, JobStatus.PENDING])
+                )
+            ).all()
+            for j in old_jobs:
+                for c in j.clips:
+                    c.deleted = True
+                    session.add(c)
+                session.delete(j)
+            session.commit()
+            if old_jobs:
+                print(f"[Startup] Cleaned up {len(old_jobs)} old failed/pending jobs")
+    except Exception as e:
+        print(f"[Startup] Cleanup error (non-fatal): {e}")
+
     from app.main import app as _fastapi_app
 
     return _fastapi_app
@@ -209,7 +235,7 @@ def _sync_clips_to_volume(job_id: int):
             if local_path and Path(local_path).exists():
                 dest = Path(CLIPS_DIR) / f"{job_id}_{clip.id}.mp4"
                 shutil.copy2(local_path, str(dest))
-                clip.r2_url = f"/api/clips/{clip.id}/download"
+                clip.r2_url = str(dest)  # Volume path, readable by download endpoint
                 session.add(clip)
         session.commit()
 
