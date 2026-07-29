@@ -82,7 +82,7 @@ def _ffmpeg_escape_path(p: str) -> str:
     return p.replace("\\", "/").replace(":", "\\:")
 
 
-def execute_render(
+async def execute_render(
     video_path: str,
     clips: list[dict[str, Any]],
     segments: list[dict[str, Any]],
@@ -172,7 +172,9 @@ def execute_render(
                 out_path,
             ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        import asyncio
+
+        result = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, text=True)
         if result.returncode != 0:
             error_lines = [l for l in result.stderr.split("\n") if "error" in l.lower() or "Error" in l]
             detail = "; ".join(error_lines[-5:]) if error_lines else result.stderr[-1000:]

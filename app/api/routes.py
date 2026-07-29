@@ -1,5 +1,6 @@
 import asyncio
 import json
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -10,7 +11,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.config import MODAL
-from app.database import engine
+from app.database import engine, force_db_sync
 from app.models import Job, JobStatus, VideoClip, clip_vault_cutoff
 from app.api.sse import event_stream
 from app.pipeline.orchestrator import execute_pipeline, generate_more_clips, refresh_clip_seo
@@ -39,7 +40,7 @@ if MODAL:
 
 else:
 
-    async def _dispatch_pipeline(job_id: int):
+    async def _dispatch_pipeline(job_id: int, job_data: dict | None = None):
         asyncio.create_task(execute_pipeline(job_id))
 
     async def _dispatch_generate_more(job_id: int, count: int = 3):
@@ -83,6 +84,9 @@ async def create_job(body: CreateJobRequest):
         session.refresh(job)
         job_id = job.id
 
+    # Flush SQLite WAL so other connections / containers see this row
+    force_db_sync()
+
     # Send a payload so the Modal worker can recreate the job record locally
     # if the Volume hasn't synced yet. This bypasses SQLite staleness on Modal
     # shared Volumes.
@@ -112,15 +116,17 @@ async def upload_job(
     max_clips: int = Form(5),
 ):
     suffix = Path(file.filename).suffix if file.filename else ".mp4"
-    tmp_path = tempfile.mktemp(suffix=suffix)
-    with open(tmp_path, "wb") as f:
+    upload_dir = Path("/mnt/data/uploads")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    local_path = str(upload_dir / f"{uuid.uuid4()}{suffix}")
+    with open(local_path, "wb") as f:
         content = await file.read()
         f.write(content)
 
     with Session(engine) as session:
         job = Job(
             title=file.filename or "Untitled Upload",
-            source_url=tmp_path,
+            source_url=local_path,
             template_id=template_id,
             campaign_rules=campaign_rules,
             max_clips=max_clips,
@@ -130,13 +136,16 @@ async def upload_job(
         session.refresh(job)
         job_id = job.id
 
+    # Flush SQLite WAL so other connections / containers see this row
+    force_db_sync()
+
     # Send a payload so the Modal worker can recreate the job record locally
     # if the Volume hasn't synced yet. This bypasses SQLite staleness on Modal
     # shared Volumes.
     job_payload = {
         "id": job_id,
         "title": file.filename or "Untitled Upload",
-        "source_url": tmp_path,
+        "source_url": local_path,
         "template_id": template_id,
         "campaign_rules": campaign_rules or "",
         "max_clips": max_clips,

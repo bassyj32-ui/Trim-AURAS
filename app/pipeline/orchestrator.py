@@ -20,6 +20,8 @@ def _update_job(job_id: int, **kwargs):
                 setattr(job, k, v)
             session.add(job)
             session.commit()
+            from app.database import force_db_sync
+            force_db_sync()
 
 
 def _get_transcript_text(segments: list[dict]) -> str:
@@ -44,7 +46,8 @@ async def execute_pipeline(job_id: int):
         # --- Phase 1: Download ---
         _update_job(job_id, status=JobStatus.DOWNLOADING, progress_percentage=10)
         job = _get_job(job_id)
-        video_path = execute_download(job.source_url)
+        import asyncio
+        video_path = await asyncio.to_thread(execute_download, job.source_url)
 
         # Upload source video to R2 for re-generation (non-fatal)
         source_key = f"sources/{job_id}_source.mp4"
@@ -68,7 +71,7 @@ async def execute_pipeline(job_id: int):
 
         # --- Phase 4: Render ---
         _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
-        rendered_paths = execute_render(video_path, clips, segments, job.template_id)
+        rendered_paths = await execute_render(video_path, clips, segments, job.template_id)
 
         # --- Phase 5: SEO & Upload (per clip) ---
         transcript_text = _get_transcript_text(segments)
@@ -171,7 +174,7 @@ async def generate_more_clips(job_id: int, count: int = 3):
 
         # Render new clips
         _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
-        rendered_paths = execute_render(tmp_video, clips, segments, job.template_id)
+        rendered_paths = await execute_render(tmp_video, clips, segments, job.template_id)
 
         # SEO + upload
         transcript_text = _get_transcript_text(segments)

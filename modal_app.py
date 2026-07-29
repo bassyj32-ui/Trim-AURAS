@@ -137,6 +137,7 @@ def process_pipeline(job_id: int, job_data: dict | None = None):
         if job_data is not None:
             from sqlmodel import Session
             from app.models import Job
+            from app.database import force_db_sync
 
             with Session(engine) as session:
                 existing = session.get(Job, job_id)
@@ -145,9 +146,24 @@ def process_pipeline(job_id: int, job_data: dict | None = None):
                     job.id = job_id
                     session.add(job)
                     session.commit()
+                    force_db_sync()
 
         import asyncio
         from app.pipeline.orchestrator import execute_pipeline
+
+        # Wait for the uploaded source file to appear on the Volume (it was
+        # written by the ASGI container and may not have synced yet).
+        import os, time
+        if job_data and "source_url" in job_data and job_data["source_url"].startswith("/mnt/data/"):
+            waited = 0
+            for _ in range(120):  # up to ~120 seconds
+                if os.path.exists(job_data["source_url"]):
+                    print(f"Source file found after ~{waited}s: {job_data['source_url']}")
+                    break
+                time.sleep(1)
+                waited += 1
+            else:
+                print(f"Source file NOT found after {waited}s: {job_data['source_url']}")
 
         asyncio.run(execute_pipeline(job_id))
         _sync_clips_to_volume(job_id)
@@ -162,10 +178,6 @@ def process_generate_more(job_id: int, count: int = 3):
     _write_status(job_id, "ANALYZING", 40)
     try:
         _ensure_path()
-
-        # Force Modal Volume to sync so the SQLite DB written by the ASGI
-        # container is visible to this worker container.
-        data_volume.reload()
 
         import asyncio
         from app.pipeline.orchestrator import generate_more_clips

@@ -41,4 +41,4 @@ if MODAL:
 # -- Cloudflare R2 toggle ---------------------------------------------------
 # Cloudflare R2 S3 API TLS cert is not provisioned for this account yet.
 # Set True once resolved (https://www.cloudflarestatus.com/incidents/py46dmbg0t0t)
-R2_ENABLED = False
+R2_ENABLED = True
