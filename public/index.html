@@ -71,6 +71,9 @@
   <!-- CTA + Settings -->
   <div class="cta-row reveal" style="animation-delay:0.5s;">
     <button class="cta" id="generateBtn">Generate shorts</button>
+    <button class="settings-btn hidden" id="pwaInstall" title="Install App">
+      <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V4m0 12-4-4m4 4 4-4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+    </button>
     <button class="settings-btn" id="settingsBtn">
       <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2 M12 18.8V21 M4.9 4.9l1.6 1.6 M17.5 17.5l1.6 1.6 M3 12h2.2 M18.8 12H21 M4.9 19.1l1.6-1.6 M17.5 6.5l1.6-1.6"/></svg>
     </button>
@@ -741,6 +744,31 @@ function timeAgo(iso) {
 }
 
 function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// --- PWA Install ---
+let deferredPrompt = null;
+const pwaInstallBtn = document.getElementById('pwaInstall');
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  pwaInstallBtn.classList.remove('hidden');
+});
+
+pwaInstallBtn.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const result = await deferredPrompt.userChoice;
+  if (result.outcome === 'accepted') pwaInstallBtn.classList.add('hidden');
+  deferredPrompt = null;
+});
+
+// Show iOS install hint for Safari users
+if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !window.navigator.standalone) {
+  setTimeout(() => {
+    showToast('📱 Tap Share → Add to Home Screen');
+  }, 3000);
+}
 
 // --- Init ---
 loadTemplates();

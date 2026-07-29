@@ -2,6 +2,7 @@ const CACHE = "trimaura-v1";
 const STATIC_ASSETS = [
   "/",
   "/manifest.json",
+  "/styles.css",
   "/icon-192.png",
   "/icon-512.png",
 ];

@@ -361,6 +361,9 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.6;stroke-lin
 }
 .clip-dot.active{border-color:var(--accent);background:var(--accent-dim);color:var(--accent);}
 
+/* --- Utility --- */
+.hidden{display:none!important}
+
 /* --- Toast --- */
 .toast{
   position:fixed;bottom:calc(80px + var(--safe-b));left:50%;
