@@ -1,7 +1,7 @@
 # TrimAURA — Build Plan & Roadmap
 
 > **Last updated:** 2026-07-30
-> **Status:** 🟢 V1 deployed on Modal cloud — GDrive + local uploads only
+> **Status:** 🟢 V1 deployed on Modal — emoji captions, color grading, Ken Burns zoom
 > **URL:** <https://bassyj32--trimaura-fastapi-app.modal.run>
 
 ***
@@ -155,7 +155,10 @@ trimaura/
 | 6.6  | `assets/templates/gaming_neon_v1/`    | Gaming Neon — cyan glow, magenta highlights (+40-55% retention)                               | ✅      |
 | 6.7  | `assets/templates/mrbeast_energy_v1/` | MrBeast Energy — yellow/red, #1 viral style (+35-45% retention)                               | ✅      |
 | 6.8  | `assets/templates/brand_bold_v1/`     | Brand Bold — professional #2 style for business content                                       | ✅      |
-| 6.9  | `app/pipeline/video_editor.py`        | Renderer now supports overlay PNG compositing + dynamic subtitle styling from template config | ✅      |
+| 6.9  | `app/pipeline/video_editor.py`        | Renderer supports overlay PNG, emoji captions, color grading (eq), Ken Burns zoom (zoompan) | ✅      |
+| 6.10 | Emoji injection                       | 90+ keyword→emoji mapping appended to ASS subtitles                                          | ✅      |
+| 6.11 | Color grading per template             | FFmpeg eq filter — brightness, contrast, saturation, gamma configurable per template          | ✅      |
+| 6.12 | Ken Burns subtle zoom                  | FFmpeg zoompan — slow zoom-in over clip duration, per-template toggle                        | ✅      |
 
 ***
 

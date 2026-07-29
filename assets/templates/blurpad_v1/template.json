@@ -8,6 +8,13 @@
     "x_offset": 0, "y_offset": 420,
     "fit_mode": "contain"
   },
+  "color_grade": {
+    "brightness": 0.0, "contrast": 1.0,
+    "saturation": 1.15, "gamma": 1.0
+  },
+  "ken_burns": {
+    "enabled": true, "zoom_start": 1.0, "zoom_end": 1.05
+  },
   "subtitles": {
     "alignment": 2, "margin_v": 180,
     "font_name": "Arial", "font_size": 28,

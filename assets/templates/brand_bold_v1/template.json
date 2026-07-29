@@ -9,6 +9,13 @@
     "fit_mode": "contain"
   },
   "overlay_image": "overlay.png",
+  "color_grade": {
+    "brightness": 0.01, "contrast": 1.05,
+    "saturation": 1.0, "gamma": 1.0
+  },
+  "ken_burns": {
+    "enabled": true, "zoom_start": 1.0, "zoom_end": 1.03
+  },
   "subtitles": {
     "alignment": 2, "margin_v": 180,
     "font_name": "Georgia", "font_size": 28,

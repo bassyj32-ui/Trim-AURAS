@@ -9,6 +9,13 @@
     "fit_mode": "contain"
   },
   "overlay_image": "overlay.png",
+  "color_grade": {
+    "brightness": -0.03, "contrast": 0.9,
+    "saturation": 0.85, "gamma": 1.05
+  },
+  "ken_burns": {
+    "enabled": true, "zoom_start": 1.0, "zoom_end": 1.04
+  },
   "subtitles": {
     "alignment": 2, "margin_v": 180,
     "font_name": "Courier New", "font_size": 28,

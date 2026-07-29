@@ -9,6 +9,13 @@
     "fit_mode": "contain"
   },
   "overlay_image": "overlay.png",
+  "color_grade": {
+    "brightness": 0.0, "contrast": 1.0,
+    "saturation": 1.0, "gamma": 1.0
+  },
+  "ken_burns": {
+    "enabled": false, "zoom_start": 1.0, "zoom_end": 1.0
+  },
   "subtitles": {
     "alignment": 2, "margin_v": 200,
     "font_name": "Arial", "font_size": 28,
