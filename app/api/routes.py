@@ -124,8 +124,8 @@ async def upload_job(
     upload_dir.mkdir(parents=True, exist_ok=True)
     local_path = str(upload_dir / f"{uuid.uuid4()}{suffix}")
     with open(local_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
+        while chunk := await file.read(1024 * 1024):  # 1MB chunks
+            f.write(chunk)
 
     with Session(engine) as session:
         job = Job(

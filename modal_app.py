@@ -98,6 +98,7 @@ def _ensure_path():
         modal.Secret.from_name("trimaura-supabase-keys"),
         modal.Secret.from_name("trimaura-db-url"),
     ],
+    max_request_size=500_000_000,  # 500MB for video uploads
     min_containers=1,
     scaledown_window=120,
 )
