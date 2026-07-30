@@ -360,6 +360,13 @@ async def download_clip(clip_id: int):
     # On Modal, try to serve directly from the Volume first
     if MODAL:
         vol_path = Path(f"/mnt/data/clips/{clip.job_id}_{clip.id}.mp4")
+        # Reload the Volume so we can see files committed by the pipeline
+        # after this web container started.
+        try:
+            import modal as _modal
+            _modal.Volume.from_name("trimaura-data").reload()
+        except Exception:
+            pass
         if vol_path.exists():
             return FileResponse(
                 vol_path,

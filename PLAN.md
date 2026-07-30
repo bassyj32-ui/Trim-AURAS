@@ -1,7 +1,7 @@
 # TrimAURA — Build Plan & Roadmap
 
 > **Last updated:** 2026-07-30
-> **Status:** 🟢 V1 deployed on Modal — Warm cream UI redesign, circular template swatches, Opus-style results
+> **Status:** 🟢 V1 deployed on Modal — Warm cream UI, scale-to-zero (no always-on cost), Whisper Turbo, Volume download fix
 > **URL:** <https://bassyj32--trimaura-fastapi-app.modal.run>
 
 ***
@@ -81,7 +81,7 @@ trimaura/
 | Step | File                            | What                                                                     | Status |
 | ---- | ------------------------------- | ------------------------------------------------------------------------ | ------ |
 | 2.1  | `app/pipeline/downloader.py`    | yt-dlp download + GDrive regex                                           | ✅      |
-| 2.2  | `app/pipeline/transcriber.py`   | Groq Whisper V3 with tenacity retry                                      | ✅      |
+| 2.2  | `app/pipeline/transcriber.py`   | Groq Whisper V3 Turbo with tenacity retry (was V3, cheaper)              | ✅      |
 | 2.3  | `app/pipeline/intelligence.py`  | DeepSeek viral moment analysis                                           | ✅      |
 | 2.4  | `app/pipeline/video_editor.py`  | FFmpeg render with ASS subtitles                                         | ✅      |
 | 2.5  | `app/pipeline/seo_generator.py` | DeepSeek SEO titles + hashtags                                           | ✅      |
@@ -115,7 +115,7 @@ trimaura/
 | ---- | ----------------------------- | ------------------------------------------------------------------------------------------------------------ | ------ |
 | 4.1  | `modal_app.py`                | Modal image with ffmpeg + Python deps                                                                        | ✅      |
 | 4.2  | `modal_app.py`                | `modal.Volume("trimaura-data")` for SQLite + clips + status                                                  | ✅      |
-| 4.3  | `modal_app.py`                | `@asgi_app()` wrapping FastAPI, `min_containers=1`                                                           | ✅      |
+| 4.3  | `modal_app.py`                | `@asgi_app()` wrapping FastAPI, scale-to-zero (removed `min_containers=1`, saves $36/mo)                    | ✅      |
 | 4.4  | `modal_app.py`                | `process_pipeline()` — 3600s timeout (1hr), Volume fallback                                                  | ✅      |
 | 4.5  | `modal_app.py`                | `process_generate_more()` — 600s timeout                                                                     | ✅      |
 | 4.6  | `modal_app.py`                | Status JSON files at `/mnt/data/status/job_{id}.json`                                                        | ✅      |
@@ -262,33 +262,34 @@ This phase is what turns TrimAURA from a personal tool into a SaaS product servi
 
 ## 💰 Cost Analysis
 
-### Current Personal Plan (Free)
+### Current Personal Plan (Cheap Mode)
 
 > You're on **Modal Hobby** ($30/mo free credits) + **Groq Free Tier** + **DeepSeek pay-as-you-go** (\~$5 prepaid).
+> **Scale-to-zero enabled** — no always-on container. App goes to sleep when idle, cold starts in ~1s.
 
-| Service               | What You Pay                                     | How It's Free                                   |
-| --------------------- | ------------------------------------------------ | ----------------------------------------------- |
-| **Modal compute**     | **$0/mo** (within free $30 credits)              | Modal gives $30/mo free to devs. You use \~$11  |
-| **Groq Whisper V3**   | **$0/mo**                                        | Free tier: 3,000 calls/day, 1,000 min audio/day |
-| **DeepSeek V4 Flash** | **\~$0.0001/video** ($5 prepaid ≈ 50,000 videos) | Extremely cheap API pricing                     |
-| **Cloudflare R2**     | **$0/mo** (disabled)                             | Would be free tier anyway (10GB, 1M reads/mo)   |
-| **Modal Volume**      | **Included**                                     | Storage within free tier                        |
-| **Total**             | **\~$0-1/mo**                                    | $5 DeepSeek deposit lasts years                 |
+| Service                 | What You Pay                                     | How It's Free                                   |
+| ----------------------- | ------------------------------------------------ | ----------------------------------------------- |
+| **Modal compute**       | **$0/mo** (within free $30 credits)              | Modal gives $30/mo free. You use \~$2           |
+| **Groq Whisper Turbo**  | **$0/mo** (or ~$0.03/video past free tier)       | Free tier: 3,000 calls/day, 1,000 min audio/day |
+| **DeepSeek V4 Flash**   | **\~$0.0001/video** ($5 prepaid ≈ 50,000 videos) | Extremely cheap API pricing                     |
+| **Cloudflare R2**       | **$0/mo** (disabled)                             | Would be free tier anyway (10GB, 1M reads/mo)   |
+| **Modal Volume**        | **Included**                                     | Storage within free tier                        |
+| **Total**               | **\~$0-1/mo**                                    | $5 DeepSeek deposit lasts years                 |
 
 #### Per-Video Cost Breakdown (40 videos/mo = 10/week)
 
 | Step                       | Cost per Video | Annual Cost   |
 | -------------------------- | -------------- | ------------- |
 | Download (Modal CPU)       | \~$0.002       | \~$0.96       |
-| Transcribe (Groq free)     | $0             | $0            |
+| Transcribe (Groq Turbo)    | \~$0.03        | \~$14.40      |
 | Analyze (DeepSeek)         | \~$0.00004     | \~$0.02       |
 | Render 5 clips (Modal CPU) | \~$0.02        | \~$9.60       |
 | SEO (DeepSeek)             | \~$0.00007     | \~$0.03       |
-| **Pipeline total**         | **\~$0.025**   | **\~$12**     |
-| Keep-warm container        | $9/mo flat     | \~$108        |
-| **Grand total**            | **\~$11/mo**   | **\~$120/yr** |
+| **Pipeline total**         | **\~$0.05**    | **\~$25**     |
+| ~~Keep-warm container~~    | **$0 (removed)** | **$0**       |
+| **Grand total**            | **\~$0.05/vid** | **\~$25/yr** |
 
-> **Note:** You've set a $28/mo Modal spend cap. At 40 videos/month, you're at \~40% of that cap. Room to grow.
+> **Note:** Changed from Whisper V3 → Turbo (halves cost). Removed `min_containers=1` → saves $36/mo. Cold start is ~1s.
 
 ### 🚀 Future Cost Projections (6+ months away)
 
@@ -336,7 +337,7 @@ This phase is what turns TrimAURA from a personal tool into a SaaS product servi
 | Clips rendering            | ✅ Yes             | FFmpeg runs in Modal container                        |
 | Download clips             | ✅ Yes             | Served from Modal Volume via API                      |
 | Video player in drawer     | ✅ Yes             | Streams from API download endpoint                    |
-| Clip vault (14-day)        | ✅ Yes             | SQLite + clips on Modal Volume                        |
+| Clip vault (14-day)        | ✅ Yes             | Supabase PostgreSQL + clips on Modal Volume           |
 | Generate More clips        | ❌ No              | Requires R2 for saved source (blocked until R2 fixed) |
 | PWA install to home screen | ✅ Yes             | HTTPS ready, manifest ready                           |
 | Offline access             | ⏳ Needs PNG icons | Service worker works, icons pending                   |
@@ -387,7 +388,9 @@ Total effort: **\~2 hours.** After that, your clips will be 80-90% of Opus quali
 | `generate_more` requires R2 source key     | 🟡 Needs R2 fix | Feature unavailable until R2 is back                  |
 | No user auth (single-user)                 | 🟡 OK for MVP   | Add auth before onboarding others                     |
 | Supabase transaction pool may timeout      | 🟡 OK for MVP   | Modal process_pipeline has 3600s timeout              |
-| Stale status file on Modal Volume          | 🟡 WORKAROUND   | Job payload passed to pipeline worker; read GET /jobs/{id} for real state |
+| Volume reload on cold start                | ✅ FIXED        | `data_volume.reload()` added to download endpoint     |
+| PWA blank screen on mobile CSS fix         | ✅ FIXED        | `.frame-wrapper{display:block}` deployed              |
+| Scale-to-zero cold start delay             | ✅ ACCEPTABLE   | ~1s cold start (removed min_containers=1, saves $36/mo) |
 
 ***
 

@@ -12,7 +12,7 @@ It incorporates the **Modal serverless architecture**, **template-driven layouts
 
 **Target Platform:** Mobile-First PWA (iOS/Android) & Web
 
-**Primary Architecture:** FastAPI + SQLModel (SQLite WAL) + Modal.com (Serverless FFmpeg Execution) + Groq Whisper V3 + DeepSeek Chat + Cloudflare R2 (Public CDN).
+**Primary Architecture:** FastAPI + SQLModel (Supabase PostgreSQL) + Modal.com (Serverless FFmpeg Execution) + Groq Whisper V3 Turbo + DeepSeek Chat + Modal Volume (fallback) + Cloudflare R2 (CDN).
 
 ***
 
@@ -29,19 +29,19 @@ It is designed to be operated from a **mobile phone PWA** while all heavy comput
 └───────────┬────────────┘
             │ 1. POST /api/jobs (URL + Template ID)
             ▼
-┌────────────────────────┐      ┌─────────────────────────┐
-│   FastAPI Web App      │ ────►│    SQLModel / SQLite    │
-│  (Modal / Cloud Host)  │      │  (Jobs & Video Clips)   │
-└───────────┬────────────┘      └─────────────────────────┘
+┌────────────────────────┐      ┌──────────────────────────────┐
+│   FastAPI Web App      │ ────►│   SQLModel / Supabase Pg    │
+│  (Modal / Cloud Host)  │      │  (Jobs & Video Clips)       │
+└───────────┬────────────┘      └──────────────────────────────┘
             │ 2. Dispatches Modal Background Worker
             ▼
 ┌────────────────────────────────────────────────────────┐
 │               Modal.com Serverless Worker              │
-│  1. yt-dlp / Drive Download to Ephemeral Workspace     │
-│  2. Groq Whisper V3 (API + Tenacity Auto-Retry)        │
+│  1. yt-dlp / GDrive Download to Ephemeral Workspace    │
+│  2. Groq Whisper V3 Turbo (API + Tenacity Auto-Retry)  │
 │  3. DeepSeek Chat (API + Tenacity Auto-Retry)          │
 │  4. FFmpeg Engine (Loads Versioned Template + Subtitles)│
-│  5. Push HD 1080x1920 MP4 Clips to Cloudflare R2       │
+│  5. Copy HD 1080x1920 MP4 Clips to Modal Volume (+R2)  │
 │  6. Auto-Purge Raw Source & Terminate Container        │
 └───────────────────────────┬────────────────────────────┘
                             │
@@ -315,10 +315,11 @@ Fetches a list of all past jobs and their associated clips for the Mobile PWA Hi
 
 ```
 
-### `GET /api/jobs/{job_id}/stream`
+### `GET /api/jobs/{job_id}/poll` (Replaces SSE)
 
-- **Protocol:** Server-Sent Events (SSE)
-- **Emits:** Live execution updates (e.g., `{"status": "RENDERING", "progress": 80}`) until job status reaches `COMPLETED` or `FAILED`.
+- **Protocol:** HTTP GET polling (every 2s from frontend)
+- **Response:** Lightweight status JSON from Modal Volume status file
+- **Emits:** `{"status": "RENDERING", "progress": 80}` until job reaches `COMPLETED` or `FAILED`.
 
 ***
 

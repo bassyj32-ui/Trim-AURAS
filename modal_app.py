@@ -98,8 +98,6 @@ def _ensure_path():
         modal.Secret.from_name("trimaura-supabase-keys"),
         modal.Secret.from_name("trimaura-db-url"),
     ],
-    max_request_size=500_000_000,  # 500MB for video uploads
-    min_containers=1,
     scaledown_window=120,
 )
 @modal.asgi_app()
@@ -246,6 +244,8 @@ def _sync_clips_to_volume(job_id: int):
                 clip.r2_url = str(dest)  # Volume path, readable by download endpoint
                 session.add(clip)
         session.commit()
+        # Force Volume commit so the web container can see the new files immediately
+        data_volume.commit()
 
 
 # ===========================================================================

@@ -372,7 +372,8 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
 }
 
 /* --- Phone Frame (Desktop Preview) --- */
-.frame-wrapper{display:none}
+.frame-wrapper{display:block;width:100%;}
+.frame .scroll{padding:0 16px;}
 @media(min-width:900px){
   body{background:#DCD3C4;padding:50px 20px;}
   .frame-wrapper{

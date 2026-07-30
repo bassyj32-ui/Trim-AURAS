@@ -23,7 +23,7 @@ async def execute_transcribe(video_path: str) -> list[dict[str, Any]]:
     with open(audio_path, "rb") as f:
         response = await client.audio.transcriptions.create(
             file=(Path(audio_path).name, f),
-            model="whisper-large-v3",
+            model="whisper-large-v3-turbo",
             response_format="verbose_json",
             language="en",
         )
