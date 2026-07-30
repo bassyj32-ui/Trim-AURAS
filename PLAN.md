@@ -1,7 +1,7 @@
 # TrimAURA — Build Plan & Roadmap
 
 > **Last updated:** 2026-07-30
-> **Status:** 🟢 V1 deployed on Modal — emoji captions, color grading, Ken Burns zoom
+> **Status:** 🟢 V1 deployed on Modal — Warm cream UI redesign, circular template swatches, Opus-style results
 > **URL:** <https://bassyj32--trimaura-fastapi-app.modal.run>
 
 ***
@@ -43,10 +43,11 @@ trimaura/
 │   └── seo_generation.txt      # DeepSeek SEO generation prompt
 │
 ├── public/
-│   ├── index.html              # PWA frontend (SaaS dark theme)
+│   ├── index.html              # PWA frontend (warm cream design)
 │   ├── styles.css              # CSS design system
 │   ├── manifest.json           # Web App Manifest
-│   └── service-worker.js       # Cache-first service worker
+│   ├── service-worker.js       # Cache-first service worker
+│   └── template-previews/      # Lightweight JPEG template previews
 │
 ├── modal_app.py                # Modal cloud deployment
 ├── dev_server.py               # Local dev server (proxies /api/* to Modal)
@@ -110,34 +111,36 @@ trimaura/
 
 **Status:** ✅ COMPLETED AND LIVE
 
-| Step | File                | What                                                                                      | Status |
-| ---- | ------------------- | ----------------------------------------------------------------------------------------- | ------ |
-| 4.1  | `modal_app.py`      | Modal image with ffmpeg + Python deps                                                     | ✅      |
-| 4.2  | `modal_app.py`      | `modal.Volume("trimaura-data")` for SQLite + clips + status                               | ✅      |
-| 4.3  | `modal_app.py`      | `@asgi_app()` wrapping FastAPI, `min_containers=1`                                        | ✅      |
-| 4.4  | `modal_app.py`      | `process_pipeline()` — 3600s timeout (1hr), Volume fallback                               | ✅      |
-| 4.5  | `modal_app.py`      | `process_generate_more()` — 600s timeout                                                  | ✅      |
-| 4.6  | `modal_app.py`      | Status JSON files at `/mnt/data/status/job_{id}.json`                                     | ✅      |
-| 4.7  | `app/config.py`     | Auto-detect `MODAL=1` → override DB path                                                  | ✅      |
-| 4.8  | `app/api/routes.py` | Conditional dispatch: `modal.Function.from_name().spawn.aio()` vs `asyncio.create_task()` | ✅      |
-| 4.9  | `app/api/routes.py` | `GET /api/jobs/{id}/poll` endpoint                                                        | ✅      |
-| 4.10 | `public/index.html` | Polling every 2s (replaced SSE)                                                           | ✅      |
-| 4.11 | Deployment          | `modal deploy modal_app.py` → live at `bassyj32--trimaura-fastapi-app.modal.run`          | ✅      |
+| Step | File                          | What                                                                                                         | Status |
+| ---- | ----------------------------- | ------------------------------------------------------------------------------------------------------------ | ------ |
+| 4.1  | `modal_app.py`                | Modal image with ffmpeg + Python deps                                                                        | ✅      |
+| 4.2  | `modal_app.py`                | `modal.Volume("trimaura-data")` for SQLite + clips + status                                                  | ✅      |
+| 4.3  | `modal_app.py`                | `@asgi_app()` wrapping FastAPI, `min_containers=1`                                                           | ✅      |
+| 4.4  | `modal_app.py`                | `process_pipeline()` — 3600s timeout (1hr), Volume fallback                                                  | ✅      |
+| 4.5  | `modal_app.py`                | `process_generate_more()` — 600s timeout                                                                     | ✅      |
+| 4.6  | `modal_app.py`                | Status JSON files at `/mnt/data/status/job_{id}.json`                                                        | ✅      |
+| 4.7  | `app/config.py`               | Auto-detect `MODAL=1` → override DB path                                                                     | ✅      |
+| 4.8  | `app/api/routes.py`           | Conditional dispatch: `modal.Function.from_name().spawn.aio()` vs `asyncio.create_task()`                    | ✅      |
+| 4.9  | `app/api/routes.py`           | `GET /api/jobs/{id}/poll` endpoint                                                                           | ✅      |
+| 4.10 | `public/index.html`           | Polling every 2s (replaced SSE)                                                                              | ✅      |
+| 4.11 | Deployment                    | `modal deploy modal_app.py` → live at `bassyj32--trimaura-fastapi-app.modal.run`                             | ✅      |
 | 4.12 | Fix: SQLite Modal Volume sync | Pass job payload to `process_pipeline.spawn.aio()`, add retry to `_get_job()`, remove `data_volume.reload()` | ✅ v18  |
 
 ***
 
 ## ✅ Phase 5 — PWA Frontend
 
-**Status:** ✅ COMPLETED (needs proper PNG icons for full PWA)
+**Status:** ✅ COMPLETED — Warm cream UI redesign deployed
 
-| Step | File                       | What                                                                                                              | Status   |
-| ---- | -------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------- |
-| 5.1  | `public/index.html`        | Dark SaaS layout: URL input, template picker, Generate button, progress bar, history, clip drawer, settings modal | ✅        |
-| 5.2  | `public/styles.css`        | #070B0E dark theme with #00E5FF accent, glassmorphism, neon glow                                                  | ✅        |
-| 5.3  | `public/manifest.json`     | Web App Manifest with theme colors, `display: standalone`                                                         | ✅        |
-| 5.4  | `public/service-worker.js` | Cache-first for static, network-only for API                                                                      | ✅        |
-| 5.5  | Icons                      | Proper PNG icons for iOS/Android install                                                                          | ⏳ NEEDED |
+| Step | File                        | What                                                                                                             | Status |
+| ---- | --------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------ |
+| 5.1  | `public/index.html`         | Warm cream `#EDE9E3` layout: circular template chips, pill URL input, Opus-style result cards, simplified drawer | ✅      |
+| 5.2  | `public/styles.css`         | Warm cream design system with gold accents, 52px circular swatches, result-row cards, vault list                 | ✅      |
+| 5.3  | `public/manifest.json`      | Web App Manifest with `#EDE9E3` background, `display: standalone`                                                | ✅      |
+| 5.4  | `public/service-worker.js`  | Cache-first for static, network-only for API, notification click handler                                         | ✅      |
+| 5.5  | Icons                       | Proper PNG icons for iOS/Android install                                                                         | ✅      |
+| 5.6  | Template preview images     | 6 lightweight (1.3KB each) JPEG previews for circular swatches                                                   | ✅      |
+| 5.7  | PWA completion notification | Browser Notification API fires when job completes — no push server needed                                        | ✅      |
 
 ***
 
@@ -145,20 +148,20 @@ trimaura/
 
 **Status:** ✅ COMPLETED
 
-| Step | File                                  | What                                                                                          | Status |
-| ---- | ------------------------------------- | --------------------------------------------------------------------------------------------- | ------ |
-| 6.1  | `prompts/clip_analysis.txt`           | DeepSeek clip analysis prompt                                                                 | ✅      |
-| 6.2  | `prompts/seo_generation.txt`          | DeepSeek SEO prompt                                                                           | ✅      |
-| 6.3  | `assets/templates/blurpad_v1/`        | Blur-pad template config (updated styling)                                                    | ✅      |
-| 6.4  | `assets/templates/podcast_split_v1/`  | Podcast split template config + overlay                                                       | ✅      |
-| 6.5  | `assets/templates/retro_vhs_v1/`      | Retro VHS template config + overlay                                                           | ✅      |
-| 6.6  | `assets/templates/gaming_neon_v1/`    | Gaming Neon — cyan glow, magenta highlights (+40-55% retention)                               | ✅      |
-| 6.7  | `assets/templates/mrbeast_energy_v1/` | MrBeast Energy — yellow/red, #1 viral style (+35-45% retention)                               | ✅      |
-| 6.8  | `assets/templates/brand_bold_v1/`     | Brand Bold — professional #2 style for business content                                       | ✅      |
+| Step | File                                  | What                                                                                        | Status |
+| ---- | ------------------------------------- | ------------------------------------------------------------------------------------------- | ------ |
+| 6.1  | `prompts/clip_analysis.txt`           | DeepSeek clip analysis prompt                                                               | ✅      |
+| 6.2  | `prompts/seo_generation.txt`          | DeepSeek SEO prompt                                                                         | ✅      |
+| 6.3  | `assets/templates/blurpad_v1/`        | Blur-pad template config (updated styling)                                                  | ✅      |
+| 6.4  | `assets/templates/podcast_split_v1/`  | Podcast split template config + overlay                                                     | ✅      |
+| 6.5  | `assets/templates/retro_vhs_v1/`      | Retro VHS template config + overlay                                                         | ✅      |
+| 6.6  | `assets/templates/gaming_neon_v1/`    | Gaming Neon — cyan glow, magenta highlights (+40-55% retention)                             | ✅      |
+| 6.7  | `assets/templates/mrbeast_energy_v1/` | MrBeast Energy — yellow/red, #1 viral style (+35-45% retention)                             | ✅      |
+| 6.8  | `assets/templates/brand_bold_v1/`     | Brand Bold — professional #2 style for business content                                     | ✅      |
 | 6.9  | `app/pipeline/video_editor.py`        | Renderer supports overlay PNG, emoji captions, color grading (eq), Ken Burns zoom (zoompan) | ✅      |
-| 6.10 | Emoji injection                       | 90+ keyword→emoji mapping appended to ASS subtitles                                          | ✅      |
-| 6.11 | Color grading per template             | FFmpeg eq filter — brightness, contrast, saturation, gamma configurable per template          | ✅      |
-| 6.12 | Ken Burns subtle zoom                  | FFmpeg zoompan — slow zoom-in over clip duration, per-template toggle                        | ✅      |
+| 6.10 | Emoji injection                       | 90+ keyword→emoji mapping appended to ASS subtitles                                         | ✅      |
+| 6.11 | Color grading per template            | FFmpeg eq filter — brightness, contrast, saturation, gamma configurable per template        | ✅      |
+| 6.12 | Ken Burns subtle zoom                 | FFmpeg zoompan — slow zoom-in over clip duration, per-template toggle                       | ✅      |
 
 ***
 
@@ -166,24 +169,24 @@ trimaura/
 
 **Status:** 🔄 IN PROGRESS
 
-| Step | What                                                            | Status     | Notes                                                          |
-| ---- | --------------------------------------------------------------- | ---------- | -------------------------------------------------------------- |
-| 7.1  | API keys configured in `.env` and Modal secrets                 | ✅          | Groq, DeepSeek, R2 all set                                     |
-| 7.2  | Pipeline timeout increased to 1hr (3600s)                       | ✅          | Handles long videos up to 1GB                                  |
-| 7.3  | 6 research-backed templates with overlay PNGs                   | ✅          | MrBeast, Gaming Neon, Brand Bold + 3 originals                 |
-| 7.4  | Renderer supports overlay compositing + dynamic subtitle styles | ✅          | Font, color, outline, size all per-template                    |
-| 7.5  | Sentry error monitoring (backend + frontend)                    | ✅          | Free tier, 5k errors/mo. Auto-captures API crashes + JS errors |
-| 7.6  | PWA icons generated (192x512, 512x512)                          | ✅          | Real PNG icons, installable on Android/iOS                     |
-| 7.7  | Safe-area CSS for notch phones                                  | ✅          | iPhone X+ notch/home indicator covered                         |
-| 7.8  | iOS PWA support (apple-touch-icon, meta tags)                   | ✅          | Can add to iOS home screen                                     |
-| 7.9  | Touch-optimized UI (tap targets, scroll snap)                   | ✅          | 44px min touch targets, smooth scroll                          |
-| 7.10 | End-to-end test with real GDrive video                          | ✅          | Tested with Google Drive URL — pipeline completed, 3 clips     |
-| 7.11 | YouTube disabled for V1 (GDrive + local uploads only)           | ✅          | 3-layer guard: frontend, API validation, downloader check      |
-| 7.12 | boxblur=20:5 → 5:2 for faster rendering                        | ✅          | ~3-4x faster blurpad rendering on CPU                          |
-| 7.13 | Fixed missing `Path` import in orchestrator                     | ✅          | Pipeline was crashing at RENDERING stage                       |
+| Step | What                                                            | Status     | Notes                                                           |
+| ---- | --------------------------------------------------------------- | ---------- | --------------------------------------------------------------- |
+| 7.1  | API keys configured in `.env` and Modal secrets                 | ✅          | Groq, DeepSeek, R2 all set                                      |
+| 7.2  | Pipeline timeout increased to 1hr (3600s)                       | ✅          | Handles long videos up to 1GB                                   |
+| 7.3  | 6 research-backed templates with overlay PNGs                   | ✅          | MrBeast, Gaming Neon, Brand Bold + 3 originals                  |
+| 7.4  | Renderer supports overlay compositing + dynamic subtitle styles | ✅          | Font, color, outline, size all per-template                     |
+| 7.5  | Sentry error monitoring (backend + frontend)                    | ✅          | Free tier, 5k errors/mo. Auto-captures API crashes + JS errors  |
+| 7.6  | PWA icons generated (192x512, 512x512)                          | ✅          | Real PNG icons, installable on Android/iOS                      |
+| 7.7  | Safe-area CSS for notch phones                                  | ✅          | iPhone X+ notch/home indicator covered                          |
+| 7.8  | iOS PWA support (apple-touch-icon, meta tags)                   | ✅          | Can add to iOS home screen                                      |
+| 7.9  | Touch-optimized UI (tap targets, scroll snap)                   | ✅          | 44px min touch targets, smooth scroll                           |
+| 7.10 | End-to-end test with real GDrive video                          | ✅          | Tested with Google Drive URL — pipeline completed, 3 clips      |
+| 7.11 | YouTube disabled for V1 (GDrive + local uploads only)           | ✅          | 3-layer guard: frontend, API validation, downloader check       |
+| 7.12 | boxblur=20:5 → 5:2 for faster rendering                         | ✅          | \~3-4x faster blurpad rendering on CPU                          |
+| 7.13 | Fixed missing `Path` import in orchestrator                     | ✅          | Pipeline was crashing at RENDERING stage                        |
 | 7.14 | Database migrated from SQLite → Supabase (PostgreSQL)           | ✅          | `database.py` uses Supabase pooler on Modal, local dev fallback |
-| 7.15 | Mobile testing from phone                                       | ⏳          | App live at URL, needs real-world test                         |
-| 7.16 | Cloudflare R2 SSL incident                                      | 🐌 BLOCKED | Incident `py46dmbg0t0t`, using Modal Volume fallback           |
+| 7.15 | Mobile testing from phone                                       | ⏳          | App live at URL, needs real-world test                          |
+| 7.16 | Cloudflare R2 SSL incident                                      | 🐌 BLOCKED | Incident `py46dmbg0t0t`, using Modal Volume fallback            |
 
 ***
 
@@ -344,35 +347,35 @@ This phase is what turns TrimAURA from a personal tool into a SaaS product servi
 
 ## 🎯 Opus Clip vs TrimAURA — Gap Analysis
 
-| Feature | Opus Clip ($29/mo) | TrimAURA (Free) | Worth Adding for Solo? |
-|---------|:---:|:---:|:---:|
-| **9:16 auto reframe** | ✅ | ✅ | Already done |
-| **AI subtitle captions** | ✅ | ✅ | Already done |
-| **Multi-template styling** | ✅ | ✅ | Already done (6 templates) |
-| **Hook clip detection** | ✅ | ✅ | DeepSeek picks best moments |
-| **SEO titles + hashtags** | ✅ | ✅ | Already done |
-| **Emoji in captions** | ✅ | ❌ | 🟢 EASY — keyword mapping |
-| **Color grading presets** | ✅ | ❌ | 🟢 EASY — FFmpeg `eq` filter |
-| **Ken Burns zoom effect** | ✅ | ❌ | 🟡 MEDIUM — FFmpeg `zoompan` |
-| **Speaker detection (auto-zoom)** | ✅ | ❌ | 🔴 HARD — needs ML model |
-| **Filler word removal** | ✅ | ❌ | 🟡 MEDIUM — filter "um/uh/like" |
-| **Background music** | ✅ | ❌ | 🟢 EASY — overlay audio track |
-| **B-roll auto-insert** | ✅ | ❌ | 🔴 HARD — needs scene search |
-| **Multi-speaker labeling** | ✅ | ❌ | 🔴 HARD — needs diarization |
-| **Clip preview + trim UI** | ✅ | ⏳ | 🟡 MEDIUM — frontend work |
-| **Generate More** | ✅ | ❌ | 🐌 BLOCKED — needs R2 fixed |
+| Feature                           | Opus Clip ($29/mo) | TrimAURA (Free) |      Worth Adding for Solo?     |
+| --------------------------------- | :----------------: | :-------------: | :-----------------------------: |
+| **9:16 auto reframe**             |          ✅         |        ✅        |           Already done          |
+| **AI subtitle captions**          |          ✅         |        ✅        |           Already done          |
+| **Multi-template styling**        |          ✅         |        ✅        |    Already done (6 templates)   |
+| **Hook clip detection**           |          ✅         |        ✅        |   DeepSeek picks best moments   |
+| **SEO titles + hashtags**         |          ✅         |        ✅        |           Already done          |
+| **Emoji in captions**             |          ✅         |        ❌        |    🟢 EASY — keyword mapping    |
+| **Color grading presets**         |          ✅         |        ❌        |   🟢 EASY — FFmpeg `eq` filter  |
+| **Ken Burns zoom effect**         |          ✅         |        ❌        |   🟡 MEDIUM — FFmpeg `zoompan`  |
+| **Speaker detection (auto-zoom)** |          ✅         |        ❌        |     🔴 HARD — needs ML model    |
+| **Filler word removal**           |          ✅         |        ❌        | 🟡 MEDIUM — filter "um/uh/like" |
+| **Background music**              |          ✅         |        ❌        |  🟢 EASY — overlay audio track  |
+| **B-roll auto-insert**            |          ✅         |        ❌        |   🔴 HARD — needs scene search  |
+| **Multi-speaker labeling**        |          ✅         |        ❌        |   🔴 HARD — needs diarization   |
+| **Clip preview + trim UI**        |          ✅         |        ⏳        |    🟡 MEDIUM — frontend work    |
+| **Generate More**                 |          ✅         |        ❌        |   🐌 BLOCKED — needs R2 fixed   |
 
 ### 🎯 What I Recommend You Add (For Solo $0)
 
 These 3 are high-impact, zero-dollar, and make your clips look significantly better:
 
-| Priority | Feature | Effort | Impact |
-|:--------:|---------|--------|--------|
-| **1** | **Emoji in captions** | ~30 min | Medium — clips feel more "alive" |
-| **2** | **Color grade presets** | ~30 min | High — clips look more polished |
-| **3** | **Ken Burns subtle zoom** | ~1 hr | High — adds production value |
+| Priority | Feature                   | Effort   | Impact                           |
+| :------: | ------------------------- | -------- | -------------------------------- |
+|   **1**  | **Emoji in captions**     | \~30 min | Medium — clips feel more "alive" |
+|   **2**  | **Color grade presets**   | \~30 min | High — clips look more polished  |
+|   **3**  | **Ken Burns subtle zoom** | \~1 hr   | High — adds production value     |
 
-Total effort: **~2 hours.** After that, your clips will be 80-90% of Opus quality for **$0/mo vs $29/mo**.
+Total effort: **\~2 hours.** After that, your clips will be 80-90% of Opus quality for **$0/mo vs $29/mo**.
 
 > Skip the hard features (speaker detection, filler words, B-roll) for solo use. They need ML models, heavy deps, and add marginal value for Vyro clips where volume matters more than perfection.
 
@@ -382,7 +385,6 @@ Total effort: **~2 hours.** After that, your clips will be 80-90% of Opus qualit
 | ------------------------------------------ | --------------- | ----------------------------------------------------- |
 | Cloudflare R2 TLS cert not provisioned     | 🔴 BLOCKED      | Clips stored on Modal Volume, served via API download |
 | `generate_more` requires R2 source key     | 🟡 Needs R2 fix | Feature unavailable until R2 is back                  |
-| PWA icons are SVG data URIs (blank on iOS) | 🟡 Low priority | Add proper PNG icon files                             |
 | No user auth (single-user)                 | 🟡 OK for MVP   | Add auth before onboarding others                     |
 | Supabase transaction pool may timeout      | 🟡 OK for MVP   | Modal process_pipeline has 3600s timeout              |
 | Stale status file on Modal Volume          | 🟡 WORKAROUND   | Job payload passed to pipeline worker; read GET /jobs/{id} for real state |

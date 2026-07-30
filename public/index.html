@@ -21,7 +21,10 @@
 </head>
 <body>
 
-<div class="container">
+<div class="frame-wrapper">
+<div class="frame">
+<div class="scroll">
+<div class="container" style="padding:26px 0 40px;">
 
   <!-- Brand Profile -->
   <div class="profile reveal" style="animation-delay:0.08s;">
@@ -30,51 +33,45 @@
     <div class="p-sub">Upload once. Create endlessly.</div>
   </div>
 
-  <!-- Stats Row -->
-  <div class="stats-row reveal" style="animation-delay:0.14s;">
-    <div class="stat"><div class="stat-num" data-count="1204">0</div><div class="stat-label">Clips made</div></div>
-    <div class="stat-sep"></div>
-    <div class="stat"><div class="stat-num" data-count="68" data-suffix="%">0%</div><div class="stat-label">Watch‑through</div></div>
-    <div class="stat-sep"></div>
-    <div class="stat"><div class="stat-num" data-count="10" data-suffix="K">0K</div><div class="stat-label">Reached</div></div>
-  </div>
-
   <!-- New Short Section -->
   <div class="section-label reveal" style="animation-delay:0.18s;">New short</div>
 
-  <div class="card url-field reveal" style="animation-delay:0.2s;">
+  <div class="url-field reveal" style="animation-delay:0.2s;">
     <input class="url-input" id="urlInput" type="url" placeholder="Google Drive URL" autocomplete="url">
   </div>
 
   <div class="divider-or reveal" style="animation-delay:0.22s;">OR</div>
 
-  <div class="card upload-card reveal" style="animation-delay:0.24s;" id="uploadZone">
+  <div class="upload-card reveal" style="animation-delay:0.24s;" id="uploadZone">
     <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/x-matroska,.mp4,.mov,.mkv">
     <button class="upload-clear" id="uploadClear" style="display:none" title="Remove file">&times;</button>
     <div class="upload-icon" id="uploadIcon">
-      <svg class="icon" width="15" height="15" viewBox="0 0 24 24"><path d="M12 16V6 M8 10l4-4 4 4"/><path d="M5 18h14"/></svg>
+      <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V6 M8 10l4-4 4 4"/><path d="M5 18h14"/></svg>
     </div>
     <div class="upload-filename" id="uploadText">Drop your video here or tap to browse</div>
     <div class="upload-check" id="uploadCheck" style="display:none">
-      <svg class="icon" width="9" height="9" viewBox="0 0 24 24" style="stroke:#5EA36E"><path d="M4 12l5 5L20 6"/></svg>
+      <svg class="icon" width="10" height="10" viewBox="0 0 24 24" style="stroke:var(--green)"><path d="M4 12l5 5L20 6"/></svg>
       READY TO PROCESS
     </div>
   </div>
 
-  <!-- Template Section -->
-  <div class="section-label reveal" style="animation-delay:0.28s;">Template <span id="templateCount">01 / 06</span></div>
+  <!-- Style Picker — Circular Chips -->
+  <div class="section-label reveal" style="animation-delay:0.28s;margin-top:24px;">Style <span class="hint" id="styleHint">Blur Pad</span></div>
 
-  <div class="template-scroll" id="templateList">
-    <!-- Templates rendered by JS -->
+  <div class="style-row" id="styleList">
+    <!-- Rendered by JS -->
   </div>
 
-  <!-- CTA + Settings -->
+  <!-- CTA Row + Download All + Settings -->
   <div class="cta-row reveal" style="animation-delay:0.5s;">
     <button class="cta" id="generateBtn">Generate shorts</button>
-    <button class="settings-btn hidden" id="pwaInstall" title="Install App">
+    <button class="icon-btn" id="downloadAllBtn" title="Download all clips">
+      <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V4m0 12-4-4m4 4 4-4"/><path d="M16 20H8"/></svg>
+    </button>
+    <button class="icon-btn hidden" id="pwaInstall" title="Install App">
       <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V4m0 12-4-4m4 4 4-4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
     </button>
-    <button class="settings-btn" id="settingsBtn">
+    <button class="icon-btn" id="settingsBtn" title="Settings">
       <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2 M12 18.8V21 M4.9 4.9l1.6 1.6 M17.5 17.5l1.6 1.6 M3 12h2.2 M18.8 12H21 M4.9 19.1l1.6-1.6 M17.5 6.5l1.6-1.6"/></svg>
     </button>
   </div>
@@ -88,13 +85,25 @@
     <span id="progressPct">0%</span>
   </div>
 
-  <!-- Clip Vault -->
-  <div class="section-label reveal" style="animation-delay:0.6s;margin-top:26px;">Clip vault <span id="vaultCount">0 pending</span></div>
+  <!-- Results Section (shown after generation) -->
+  <div class="section-label reveal" style="animation-delay:0.6s;margin-top:28px;" id="resultsLabel">
+    Results <span class="hint" id="resultsCount"></span>
+  </div>
 
-  <div id="historyList">
+  <div id="resultsList" class="reveal" style="animation-delay:0.62s;">
+    <!-- Rendered by JS after job completes -->
+  </div>
+
+  <!-- Clip Vault -->
+  <div class="section-label reveal" style="animation-delay:0.66s;margin-top:24px;">Clip vault <span class="hint" id="vaultCount">0 pending</span></div>
+
+  <div id="historyList" class="reveal" style="animation-delay:0.68s;">
     <div class="loading">Loading...</div>
   </div>
 
+</div>
+</div>
+</div>
 </div>
 
 <!-- Clip Drawer -->
@@ -104,18 +113,13 @@
   <div class="drawer-content">
     <div class="clip-nav" id="clipNav"></div>
     <video id="clipVideo" controls playsinline preload="metadata"></video>
-    <div class="title-tabs" id="titleTabs">
-      <button class="title-tab active" data-key="curiosity">Curiosity</button>
-      <button class="title-tab" data-key="direct">Direct</button>
-      <button class="title-tab" data-key="question">Question</button>
-    </div>
-    <div class="title-text" id="titleText"></div>
-    <div class="clip-meta" id="clipMeta"></div>
+    <div class="drawer-title" id="drawerTitle"></div>
+    <div class="drawer-meta" id="drawerMeta"></div>
     <div class="drawer-actions">
-      <button class="btn-small btn-copy" id="copyTitleBtn">Copy Title</button>
-      <button class="btn-small btn-copy" id="copyHashtagsBtn">Copy Hashtags</button>
-      <button class="btn-small btn-copy" id="refreshSeoBtn">Refresh SEO</button>
-      <button class="btn-small btn-outline" id="downloadBtn">Download MP4</button>
+      <button class="btn-small btn-outline" id="copyTitleBtn">Copy Title</button>
+      <button class="btn-small btn-outline" id="copyHashtagsBtn">Copy Hashtags</button>
+      <button class="btn-small btn-outline" id="refreshSeoBtn">Refresh SEO</button>
+      <button class="btn-small btn-primary" id="downloadBtn">Download MP4</button>
     </div>
   </div>
 </div>
@@ -123,30 +127,30 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<!-- Settings Modal -->
-<div class="modal-overlay" id="settingsOverlay"></div>
-<div class="modal" id="settingsModal">
-  <div class="modal-header">
-    <span class="modal-title">Campaign Settings</span>
-    <button class="modal-close" id="modalClose">&times;</button>
-  </div>
-  <div class="modal-body">
-    <label class="modal-label">Campaign Rules (SEO instructions)</label>
-    <textarea class="modal-textarea" id="campaignRulesInput" rows="3" placeholder="e.g. Use professional tone, include keywords: productivity, AI tools, automation"></textarea>
+<!-- Settings Panel (inline slide-over) -->
+<div class="drawer-overlay" id="settingsOverlay"></div>
+<div class="drawer" id="settingsPanel" style="max-height:70dvh;">
+  <div class="drawer-handle"></div>
+  <div class="drawer-content" style="padding-bottom:24px;">
+    <div style="font-size:15px;font-weight:700;margin:8px 0 16px;">Campaign Settings</div>
 
-    <label class="modal-label">Max Clips Per Video</label>
-    <div class="slider-row">
-      <input type="range" class="modal-slider" id="maxClipsSlider" min="1" max="10" value="5">
-      <span class="slider-value" id="maxClipsValue">5</span>
+    <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:6px;letter-spacing:0.5px;">Campaign Rules (SEO instructions)</label>
+    <textarea id="campaignRulesInput" rows="3" placeholder="e.g. Use professional tone, include keywords: productivity, AI tools, automation" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:14px;font-family:var(--font);outline:none;resize:vertical;min-height:60px;"></textarea>
+
+    <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin:16px 0 6px;letter-spacing:0.5px;">Max Clips Per Video</label>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <input type="range" id="maxClipsSlider" min="1" max="10" value="5" style="flex:1;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;">
+      <span id="maxClipsValue" style="font-size:22px;font-weight:800;color:var(--ink);min-width:28px;text-align:center;">5</span>
     </div>
-    <div class="slider-labels">
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--ink-dim);margin-top:2px;">
       <span>Cost saving</span>
       <span>More content</span>
     </div>
-  </div>
-  <div class="modal-footer">
-    <button class="btn-small btn-outline" id="modalCancel">Cancel</button>
-    <button class="btn-small btn-primary" id="modalConfirm">Start Generating</button>
+
+    <div style="display:flex;gap:8px;margin-top:20px;">
+      <button class="btn-small btn-outline" id="modalCancel" style="flex:1;">Cancel</button>
+      <button class="btn-small btn-primary" id="modalConfirm" style="flex:1;">Start Generating</button>
+    </div>
   </div>
 </div>
 
@@ -162,8 +166,9 @@ let selectedClip = null;
 let selectedFile = null;
 let campaignRules = '';
 let maxClips = 5;
+let currentResultsJobId = null;
 
-// Template gradient mapping
+// Template gradient mapping (fallback)
 const templateGradients = {
   'blurpad_v1': 'linear-gradient(155deg,#E7B5A0,#C97B57)',
   'brand_bold_v1': 'linear-gradient(155deg,#8FA8C9,#4E6E96)',
@@ -171,6 +176,16 @@ const templateGradients = {
   'retro_vhs_v1': 'linear-gradient(155deg,#D9B7E0,#9C6BA8)',
   'mrbeast_energy_v1': 'linear-gradient(155deg,#E8C778,#9C7530)',
   'podcast_split_v1': 'linear-gradient(155deg,#8FC9BE,#4E9688)'
+};
+
+// Template preview images (lightweight, ~1.3KB each)
+const templatePreviews = {
+  'blurpad_v1': '/template-previews/blurpad_v1.jpg',
+  'brand_bold_v1': '/template-previews/brand_bold_v1.jpg',
+  'gaming_neon_v1': '/template-previews/gaming_neon_v1.jpg',
+  'retro_vhs_v1': '/template-previews/retro_vhs_v1.jpg',
+  'mrbeast_energy_v1': '/template-previews/mrbeast_energy_v1.jpg',
+  'podcast_split_v1': '/template-previews/podcast_split_v1.jpg'
 };
 
 // --- DOM ---
@@ -181,31 +196,32 @@ const uploadIcon = document.getElementById('uploadIcon');
 const uploadText = document.getElementById('uploadText');
 const uploadCheck = document.getElementById('uploadCheck');
 const uploadClear = document.getElementById('uploadClear');
-const templateList = document.getElementById('templateList');
-const templateCount = document.getElementById('templateCount');
+const styleList = document.getElementById('styleList');
+const styleHint = document.getElementById('styleHint');
 const generateBtn = document.getElementById('generateBtn');
 const progressWrap = document.getElementById('progressWrap');
 const progressFill = document.getElementById('progressFill');
 const progressStatus = document.getElementById('progressStatus');
 const progressPct = document.getElementById('progressPct');
+const resultsList = document.getElementById('resultsList');
+const resultsCount = document.getElementById('resultsCount');
 const historyEl = document.getElementById('historyList');
 const vaultCount = document.getElementById('vaultCount');
 const drawerOverlay = document.getElementById('drawerOverlay');
 const drawer = document.getElementById('drawer');
 const clipVideo = document.getElementById('clipVideo');
 const clipNav = document.getElementById('clipNav');
-const titleText = document.getElementById('titleText');
-const clipMeta = document.getElementById('clipMeta');
-const titleTabs = document.getElementById('titleTabs');
+const drawerTitle = document.getElementById('drawerTitle');
+const drawerMeta = document.getElementById('drawerMeta');
 const copyTitleBtn = document.getElementById('copyTitleBtn');
 const copyHashtagsBtn = document.getElementById('copyHashtagsBtn');
 const refreshSeoBtn = document.getElementById('refreshSeoBtn');
 const downloadBtn = document.getElementById('downloadBtn');
+const downloadAllBtn = document.getElementById('downloadAllBtn');
 const toast = document.getElementById('toast');
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsOverlay = document.getElementById('settingsOverlay');
-const settingsModal = document.getElementById('settingsModal');
-const modalClose = document.getElementById('modalClose');
+const settingsPanel = document.getElementById('settingsPanel');
 const modalCancel = document.getElementById('modalCancel');
 const modalConfirm = document.getElementById('modalConfirm');
 const campaignRulesInput = document.getElementById('campaignRulesInput');
@@ -256,40 +272,22 @@ function clearUpload() {
   fileInput.value = '';
 }
 
-// --- Animated Counters ---
-document.querySelectorAll('.stat-num[data-count]').forEach(el => {
-  const target = parseInt(el.dataset.count, 10);
-  const suffix = el.dataset.suffix || '';
-  const duration = 900;
-  const startDelay = 300;
-  const startTime = performance.now() + startDelay;
-  function tick(now) {
-    const t = Math.min(1, Math.max(0, (now - startTime) / duration));
-    const eased = 1 - Math.pow(1 - t, 3);
-    const val = Math.round(target * eased);
-    el.textContent = val.toLocaleString() + suffix;
-    if (t < 1) requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
-});
-
-// --- Settings Modal ---
+// --- Settings Panel ---
 function openSettings() {
   campaignRulesInput.value = campaignRules;
   maxClipsSlider.value = maxClips;
   maxClipsValue.textContent = maxClips;
   settingsOverlay.classList.add('open');
-  settingsModal.classList.add('open');
+  settingsPanel.classList.add('open');
 }
 
 function closeSettings() {
   settingsOverlay.classList.remove('open');
-  settingsModal.classList.remove('open');
+  settingsPanel.classList.remove('open');
 }
 
 settingsBtn.addEventListener('click', openSettings);
 settingsOverlay.addEventListener('click', closeSettings);
-modalClose.addEventListener('click', closeSettings);
 modalCancel.addEventListener('click', closeSettings);
 
 maxClipsSlider.addEventListener('input', () => {
@@ -303,88 +301,101 @@ modalConfirm.addEventListener('click', () => {
   showToast('Settings saved: ' + maxClips + ' clips max');
 });
 
-// --- Templates ---
-function getTemplateEmoji(id) {
-  const map = {
-    'blurpad_v1': '🎬',
-    'podcast_split_v1': '🎙️',
-    'retro_vhs_v1': '📼',
-    'gaming_neon_v1': '🎮',
-    'mrbeast_energy_v1': '🔥',
-    'brand_bold_v1': '💼'
-  };
-  return map[id] || '🎬';
-}
-
+// --- Style Picker — Circular Chips ---
 async function loadTemplates() {
   try {
     const res = await fetch('/api/templates');
     templates = await res.json();
   } catch(e) {
-    templateList.innerHTML = '<div style="color:var(--red);font-size:13px;padding:20px;text-align:center">Could not reach the server. Make sure the backend is running.</div>';
+    styleList.innerHTML = '<div style="color:var(--ink-dim);font-size:13px;padding:20px;text-align:center">Could not reach the server.</div>';
     return;
   }
-  templateList.innerHTML = templates.map((t,i) =>
-    `<div class="thumb${i===0?' active':''}" data-id="${t.id}" style="background:${templateGradients[t.id]||'linear-gradient(155deg,#E7B5A0,#C97B57)'}">
-      <span class="thumb-emoji">${getTemplateEmoji(t.id)}</span>
-      <div class="thumb-label">${t.name}</div>
+  styleList.innerHTML = templates.map((t,i) =>
+    `<div class="style-chip${i===0?' active':''}" data-id="${t.id}">
+      <div class="style-swatch" style="background-image:url('${templatePreviews[t.id]||''}');background:${templateGradients[t.id]||'linear-gradient(155deg,#E7B5A0,#C97B57)'}"></div>
+      <div class="style-name">${escHtml(t.name)}</div>
     </div>`
   ).join('');
-  templateCount.textContent = '01 / ' + String(templates.length).padStart(2,'0');
-  const thumbs = templateList.querySelectorAll('.thumb');
-  thumbs.forEach(el => {
-      el.addEventListener('click', () => {
-        thumbs.forEach(c => c.classList.remove('active'));
-        el.classList.add('active');
-        const idx = [...el.parentNode.children].indexOf(el);
-        templateCount.textContent = String(idx + 1).padStart(2,'0') + ' / ' + String(templates.length).padStart(2,'0');
-        el.scrollIntoView({behavior:'smooth', inline:'center', block:'nearest'});
-        updatePreview(el.dataset.id, el.querySelector('.thumb-label').textContent, el.style.background);
-      });
+  styleHint.textContent = templates[0]?.name || 'Blur Pad';
+  const chips = styleList.querySelectorAll('.style-chip');
+  chips.forEach(el => {
+    el.addEventListener('click', () => {
+      chips.forEach(c => c.classList.remove('active'));
+      el.classList.add('active');
+      el.scrollIntoView({behavior:'smooth', inline:'center', block:'nearest'});
+      const name = el.querySelector('.style-name').textContent;
+      styleHint.textContent = name;
     });
-  // Update counter on scroll
-  templateList.addEventListener('scroll', () => {
-    const containerRect = templateList.getBoundingClientRect();
-    const centerX = containerRect.left + containerRect.width / 2;
-    let closest = null;
-    let closestDist = Infinity;
-    templateList.querySelectorAll('.thumb').forEach((el, i) => {
-      const r = el.getBoundingClientRect();
-      const dist = Math.abs(r.left + r.width / 2 - centerX);
-      if (dist < closestDist) { closestDist = dist; closest = i; }
-    });
-    if (closest !== null) {
-      templateCount.textContent = String(closest + 1).padStart(2,'0') + ' / ' + String(templates.length).padStart(2,'0');
-    }
   });
-
-  // Init preview with first template
-  const first = thumbs[0];
-  if (first) updatePreview(first.dataset.id, first.querySelector('.thumb-label').textContent, first.style.background);
 }
 
-function updatePreview(id, name, gradient) {
-  // Update body tint
-  document.body.setAttribute('data-template', id);
-  // The preview element may not exist anymore, that's fine
-  const el = document.getElementById('previewVisual');
-  if (el) {
-    el.style.background = gradient;
-    el.innerHTML = `<div class="preview-name">${escHtml(name)}</div><div class="preview-desc">${getTemplateDesc(id)}</div>`;
-  }
+// --- Results Section ---
+function renderResults(jobId) {
+  currentResultsJobId = jobId;
+  fetch(`/api/jobs/${jobId}`)
+    .then(r => r.json())
+    .then(job => {
+      const clips = job.clips || [];
+      if (clips.length === 0) {
+        resultsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--ink-dim);font-size:12px;">No clips generated</div>';
+        resultsCount.textContent = '0 clips';
+        return;
+      }
+      resultsCount.textContent = clips.length + ' clip' + (clips.length !== 1 ? 's' : '');
+      resultsList.innerHTML = clips.map((c,i) =>
+        `<div class="result-row" data-clip-id="${c.clip_id}" data-job-id="${jobId}">
+          <div class="result-score">
+            <div class="result-score-num">${i+1}</div>
+            <div class="result-score-label">Clip</div>
+          </div>
+          <div class="result-thumb" style="background-image:url('${templatePreviews[job.template_id]||''}');background:${templateGradients[job.template_id]||'linear-gradient(155deg,#E7B5A0,#C97B57)'}">
+            <svg class="icon result-play" width="13" height="13" viewBox="0 0 24 24" style="stroke:#fff"><path d="M8 5l11 7-11 7Z"/></svg>
+          </div>
+          <div class="result-body">
+            <div class="result-title">${escHtml(c.titles?.curiosity || c.description || 'Clip ' + c.clip_id)}</div>
+            <div class="result-meta">
+              <span>${c.duration || '0'}s</span>
+              <span>${c.reason || 'Viral clip'}</span>
+            </div>
+          </div>
+          <button class="result-action" data-clip-id="${c.clip_id}" title="Download">
+            <svg class="icon" width="12" height="12" viewBox="0 0 24 24" style="stroke:#fff"><path d="M12 16V4m0 12-4-4m4 4 4-4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+          </button>
+        </div>`
+      ).join('');
+
+      // Click card → open drawer
+      resultsList.querySelectorAll('.result-row').forEach(el => {
+        el.addEventListener('click', (e) => {
+          if (e.target.closest('.result-action')) return;
+          openDrawer(parseInt(el.dataset.jobId), parseInt(el.dataset.clipId));
+        });
+      });
+      // Click download button
+      resultsList.querySelectorAll('.result-action').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          downloadSingleClip(parseInt(btn.dataset.clipId));
+        });
+      });
+    })
+    .catch(() => {
+      resultsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--ink-dim);font-size:12px;">Failed to load results</div>';
+    });
 }
 
-function getTemplateDesc(id) {
-  const map = {
-    'blurpad_v1': 'Soft blurred background with clean overlays',
-    'brand_bold_v1': 'Professional brand-focused layout',
-    'gaming_neon_v1': 'Vibrant gaming aesthetic with neon accents',
-    'retro_vhs_v1': 'Retro VHS-inspired vintage look',
-    'mrbeast_energy_v1': 'High-energy cinematic style',
-    'podcast_split_v1': 'Split-screen podcast format'
-  };
-  return map[id] || '';
-}
+// --- Download All ---
+downloadAllBtn.addEventListener('click', () => {
+  if (!currentResultsJobId) { showToast('Generate clips first'); return; }
+  fetch(`/api/jobs/${currentResultsJobId}`)
+    .then(r => r.json())
+    .then(job => {
+      if (!job.clips || job.clips.length === 0) { showToast('No clips to download'); return; }
+      job.clips.forEach(c => downloadSingleClip(c.clip_id));
+      showToast('Downloads started');
+    })
+    .catch(() => showToast('Download failed'));
+});
 
 // --- Vault / History ---
 async function loadHistory() {
@@ -420,95 +431,33 @@ async function loadHistory() {
       const gradient = templateGradients[j.template_id] || 'linear-gradient(155deg,#E7B5A0,#C97B57)';
       return `
       <div class="vault-item" data-id="${j.job_id}">
-        <div class="vault-thumb" style="background:${gradient}"></div>
+        <div class="vault-thumb" style="background-image:url('${templatePreviews[j.template_id]||''}');background:${gradient}"></div>
         <div class="vault-body">
           <div class="vault-name">${escHtml(j.title)}</div>
           <div class="vault-meta-row">
-            <div class="vault-meta">
-              <svg class="icon" width="10" height="10" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-              ${j.clips_count} clip${j.clips_count!==1?'s':''}
-            </div>
+            <div class="vault-meta">${j.clips_count} clip${j.clips_count!==1?'s':''}</div>
             <div class="vault-meta">${timeAgo(j.created_at)}</div>
           </div>
         </div>
-        ${isCompleted ? `
-        <div class="vault-actions">
-          <button class="vault-action vault-view" data-id="${j.job_id}">
-            <svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            <span class="vault-action-label">View</span>
-          </button>
-          <button class="vault-action vault-download-all" data-id="${j.job_id}">
-            <svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            <span class="vault-action-label">All</span>
-          </button>
-          <button class="vault-action vault-generate" data-id="${j.job_id}">
-            <svg class="icon" width="12" height="12" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            <span class="vault-action-label">More</span>
-          </button>
-        </div>` : `<span class="vault-status vault-status-${j.status}">${j.status}</span>`}
+        ${isCompleted ? `<span class="vault-status vault-status-COMPLETED">READY</span>` : `<span class="vault-status vault-status-${j.status}">${j.status}</span>`}
       </div>`;
     }).join('');
 
-    // Wire history item click = open drawer
+    // Wire history item click → open drawer
     historyEl.querySelectorAll('.vault-item').forEach(el => {
-      el.addEventListener('click', (e) => {
-        if (e.target.closest('.vault-action')) return;
+      el.addEventListener('click', () => {
         openDrawer(parseInt(el.dataset.id));
       });
     });
 
-    // Wire vault buttons
-    historyEl.querySelectorAll('.vault-view').forEach(b => {
-      b.addEventListener('click', (e) => { e.stopPropagation(); openDrawer(parseInt(b.dataset.id)); });
-    });
-    historyEl.querySelectorAll('.vault-download-all').forEach(b => {
-      b.addEventListener('click', (e) => { e.stopPropagation(); downloadAllClips(parseInt(b.dataset.id)); });
-    });
-    historyEl.querySelectorAll('.vault-generate').forEach(b => {
-      b.addEventListener('click', (e) => { e.stopPropagation(); generateMore(parseInt(b.dataset.id)); });
-    });
-
   } catch(e) {
-    historyEl.innerHTML = '<div style="color:var(--red);font-size:13px;text-align:center;padding:20px">Could not reach the server. Make sure the backend is running.</div>';
-  }
-}
-
-// --- Generate More ---
-async function generateMore(jobId) {
-  if (!confirm('Generate 3 more clips from this video?')) return;
-  showToast('Generating more clips...');
-  currentJobId = jobId;
-  try {
-    await fetch(`/api/jobs/${jobId}/generate-more`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({count: 3})
-    });
-    progressWrap.classList.add('active');
-    setProgress('ANALYZING', 0);
-    startPolling(jobId);
-  } catch {
-    showToast('Failed to start generation');
-  }
-}
-
-// --- Download All ---
-async function downloadAllClips(jobId) {
-  try {
-    const res = await fetch(`/api/jobs/${jobId}`);
-    const job = await res.json();
-    for (const c of job.clips) {
-      await downloadSingleClip(c.clip_id);
-    }
-    showToast('Downloads started');
-  } catch {
-    showToast('Download failed');
+    historyEl.innerHTML = '<div style="color:var(--ink-dim);font-size:13px;text-align:center;padding:20px">Could not reach the server.</div>';
   }
 }
 
 // --- Submit Job ---
 generateBtn.addEventListener('click', async () => {
-  const templateId = templateList.querySelector('.thumb.active')?.dataset.id || 'blurpad_v1';
+  const templateId = styleList.querySelector('.style-chip.active')?.dataset.id || 'blurpad_v1';
   const hasFile = selectedFile !== null;
   const url = urlInput.value.trim();
 
@@ -521,7 +470,6 @@ generateBtn.addEventListener('click', async () => {
   try {
     let res;
     if (hasFile) {
-      // Upload with real progress tracking
       generateBtn.textContent = 'Uploading...';
       setProgress('UPLOADING', 0);
 
@@ -545,7 +493,7 @@ generateBtn.addEventListener('click', async () => {
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve(new Response(xhr.response, { status: xhr.status, headers: { 'Content-Type': 'application/json' } }));
           } else {
-            reject(new Error(`Upload failed (${xhr.status})`));
+            reject(new Error('Upload failed (' + xhr.status + ')'));
           }
         };
         xhr.onerror = () => reject(new Error('Upload failed'));
@@ -569,6 +517,7 @@ generateBtn.addEventListener('click', async () => {
     const data = await res.json();
     currentJobId = data.job_id;
     generateBtn.textContent = 'Processing...';
+    resultsList.innerHTML = '<div class="loading">Generating clips...</div>';
     startPolling(currentJobId);
   } catch(e) {
     showToast('Failed to create job');
@@ -596,15 +545,19 @@ function startPolling(jobId) {
         generateBtn.textContent = 'Generate shorts';
         progressWrap.classList.remove('active');
         clearUpload();
+        renderResults(jobId);
         loadHistory();
         showToast('Shorts generated!');
+        sendNotification('TrimAURA', '✅ Shorts generated! Your clips are ready.');
       }
       if (data.status === 'FAILED') {
         clearInterval(pollTimer);
         pollTimer = null;
         generateBtn.disabled = false;
         generateBtn.textContent = 'Generate shorts';
+        resultsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--red);font-size:12px;">Generation failed: ' + (data.error || 'Unknown error') + '</div>';
         showToast('Failed: ' + (data.error || 'Unknown error'));
+        sendNotification('TrimAURA', '❌ Generation failed: ' + (data.error || 'Unknown error'));
       }
     } catch(e) {
       // Silently retry
@@ -619,7 +572,7 @@ function setProgress(status, pct) {
 }
 
 // --- Drawer ---
-async function openDrawer(jobId) {
+async function openDrawer(jobId, focusClipId) {
   try {
     const res = await fetch(`/api/jobs/${jobId}`);
     const job = await res.json();
@@ -628,10 +581,13 @@ async function openDrawer(jobId) {
 
     drawerJobId = jobId;
     drawerClips = clips;
-    drawerClipIndex = 0;
+
+    // If focusClipId provided, start at that clip
+    const startIndex = focusClipId ? clips.findIndex(c => c.clip_id === focusClipId) : 0;
+    drawerClipIndex = startIndex >= 0 ? startIndex : 0;
 
     renderClipNav();
-    selectClip(0);
+    selectClip(drawerClipIndex);
     drawerOverlay.classList.add('open');
     drawer.classList.add('open');
     document.body.style.overflow = 'hidden';
@@ -642,7 +598,7 @@ async function openDrawer(jobId) {
 
 function renderClipNav() {
   clipNav.innerHTML = drawerClips.map((c, i) =>
-    `<button class="clip-dot${i===0?' active':''}" data-index="${i}">${i+1}</button>`
+    `<button class="clip-dot${i===drawerClipIndex?' active':''}" data-index="${i}">${i+1}</button>`
   ).join('');
   clipNav.querySelectorAll('.clip-dot').forEach(el => {
     el.addEventListener('click', () => selectClip(parseInt(el.dataset.index)));
@@ -661,23 +617,9 @@ function selectClip(index) {
 function showClip(clip) {
   clipVideo.src = `/api/clips/${clip.clip_id}/download`;
   clipVideo.load();
-  setActiveTitle('curiosity');
-  updateClipMeta(clip);
+  drawerTitle.textContent = clip.titles?.curiosity || clip.description || 'Clip ' + clip.clip_id;
+  drawerMeta.textContent = (clip.duration || '0') + 's' + (clip.hashtags ? ' · ' + clip.hashtags : '');
   downloadBtn.onclick = () => downloadSingleClip(clip.clip_id);
-}
-
-function setActiveTitle(key) {
-  const titles = {curiosity: selectedClip.titles.curiosity, direct: selectedClip.titles.direct, question: selectedClip.titles.question};
-  titleText.textContent = titles[key] || 'No title';
-  document.querySelectorAll('.title-tab').forEach(t => t.classList.toggle('active', t.dataset.key === key));
-}
-
-document.querySelectorAll('.title-tab').forEach(tab => {
-  tab.addEventListener('click', () => setActiveTitle(tab.dataset.key));
-});
-
-function updateClipMeta(clip) {
-  clipMeta.textContent = `${clip.duration}s · ${clip.hashtags || ''}`;
 }
 
 drawerOverlay.addEventListener('click', closeDrawer);
@@ -701,8 +643,8 @@ refreshSeoBtn.addEventListener('click', async () => {
     selectedClip.titles = data.titles;
     selectedClip.description = data.description;
     selectedClip.hashtags = data.hashtags;
-    setActiveTitle(document.querySelector('.title-tab.active')?.dataset.key || 'curiosity');
-    updateClipMeta(selectedClip);
+    drawerTitle.textContent = data.titles?.curiosity || 'Clip ' + clipId;
+    drawerMeta.textContent = (selectedClip.duration || '0') + 's' + (data.hashtags ? ' · ' + data.hashtags : '');
     showToast('SEO refreshed!');
   } catch {
     showToast('Refresh failed');
@@ -718,7 +660,6 @@ async function downloadSingleClip(clipId) {
     const res = await fetch(`/api/clips/${clipId}/download`);
     const contentType = res.headers.get('content-type') || '';
     if (contentType.includes('json')) {
-      // Fallback: API returned a JSON with download URL
       const data = await res.json();
       if (data.download_url) {
         const a = document.createElement('a');
@@ -727,7 +668,6 @@ async function downloadSingleClip(clipId) {
         a.click();
       }
     } else {
-      // Modal: API returned the video file directly
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -743,14 +683,12 @@ async function downloadSingleClip(clipId) {
 
 // --- Copy ---
 copyTitleBtn.addEventListener('click', () => {
-  const active = document.querySelector('.title-tab.active');
-  const key = active ? active.dataset.key : 'curiosity';
-  const text = selectedClip.titles[key] || '';
+  const text = selectedClip?.titles?.curiosity || '';
   copyText(text, 'Title copied!');
 });
 
 copyHashtagsBtn.addEventListener('click', () => {
-  copyText(selectedClip.hashtags || '', 'Hashtags copied!');
+  copyText(selectedClip?.hashtags || '', 'Hashtags copied!');
 });
 
 async function copyText(text, msg) {
@@ -782,7 +720,28 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleDateString();
 }
 
-function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+function escHtml(s) { if (s === null || s === undefined) return ''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// --- Notification ---
+function sendNotification(title, body) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'granted') {
+    new Notification(title, { body, icon: '/icon-192.png', badge: '/icon-192.png' });
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then(perm => {
+      if (perm === 'granted') {
+        new Notification(title, { body, icon: '/icon-192.png', badge: '/icon-192.png' });
+      }
+    });
+  }
+}
+
+// Request notification permission on first interaction (passive)
+document.addEventListener('click', () => {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}, { once: true });
 
 // --- PWA Install ---
 let deferredPrompt = null;
