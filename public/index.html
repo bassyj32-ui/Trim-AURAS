@@ -516,20 +516,44 @@ generateBtn.addEventListener('click', async () => {
   if (url && !url.includes('drive.google.com')) { showToast('Only Google Drive URLs are supported in V1'); return; }
 
   generateBtn.disabled = true;
-  generateBtn.textContent = 'Processing...';
   progressWrap.classList.add('active');
-  setProgress('PENDING', 0);
 
   try {
     let res;
     if (hasFile) {
+      // Upload with real progress tracking
+      generateBtn.textContent = 'Uploading...';
+      setProgress('UPLOADING', 0);
+
       const form = new FormData();
       form.append('file', selectedFile);
       form.append('template_id', templateId);
       form.append('campaign_rules', campaignRules);
       form.append('max_clips', maxClips.toString());
-      res = await fetch('/api/jobs/upload', { method: 'POST', body: form });
+
+      res = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/jobs/upload');
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            setProgress('UPLOADING', pct);
+            generateBtn.textContent = `Uploading ${pct}%`;
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(new Response(xhr.response, { status: xhr.status, headers: { 'Content-Type': 'application/json' } }));
+          } else {
+            reject(new Error(`Upload failed (${xhr.status})`));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Upload failed'));
+        xhr.send(form);
+      });
     } else {
+      generateBtn.textContent = 'Processing...';
+      setProgress('PENDING', 0);
       res = await fetch('/api/jobs', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
@@ -544,11 +568,13 @@ generateBtn.addEventListener('click', async () => {
     }
     const data = await res.json();
     currentJobId = data.job_id;
+    generateBtn.textContent = 'Processing...';
     startPolling(currentJobId);
   } catch(e) {
     showToast('Failed to create job');
     generateBtn.disabled = false;
     generateBtn.textContent = 'Generate shorts';
+    progressWrap.classList.remove('active');
   }
 });
 
