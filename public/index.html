@@ -633,7 +633,7 @@ function selectClip(index) {
 }
 
 function showClip(clip) {
-  clipVideo.src = clip.r2_url;
+  clipVideo.src = `/api/clips/${clip.clip_id}/download`;
   clipVideo.load();
   setActiveTitle('curiosity');
   updateClipMeta(clip);
@@ -690,12 +690,25 @@ refreshSeoBtn.addEventListener('click', async () => {
 async function downloadSingleClip(clipId) {
   try {
     const res = await fetch(`/api/clips/${clipId}/download`);
-    const data = await res.json();
-    if (data.download_url) {
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('json')) {
+      // Fallback: API returned a JSON with download URL
+      const data = await res.json();
+      if (data.download_url) {
+        const a = document.createElement('a');
+        a.href = data.download_url;
+        a.download = `trimaura_clip_${clipId}.mp4`;
+        a.click();
+      }
+    } else {
+      // Modal: API returned the video file directly
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = data.download_url;
+      a.href = url;
       a.download = `trimaura_clip_${clipId}.mp4`;
       a.click();
+      URL.revokeObjectURL(url);
     }
   } catch {
     showToast('Download failed');
