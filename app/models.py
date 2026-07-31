@@ -25,6 +25,7 @@ class Job(SQLModel, table=True):
     transcript_json: Optional[str] = None         # Full transcript JSON (segments)
     campaign_rules: Optional[str] = None          # SEO campaign rules per job
     max_clips: int = Field(default=5)             # Max clips to generate
+    preferred_height: Optional[int] = Field(default=720)  # Frame.io proxy height (0 = original)
 
     status: str = Field(default=JobStatus.PENDING)
     progress_percentage: int = Field(default=0)
@@ -49,6 +50,7 @@ class VideoClip(SQLModel, table=True):
     title_question: str = ""
     description: str = ""
     hashtags: str = ""
+    posted_platforms: Optional[str] = Field(default="[]")  # JSON list: ["tiktok","youtube","instagram"]
 
     deleted: bool = Field(default=False)          # Soft delete
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

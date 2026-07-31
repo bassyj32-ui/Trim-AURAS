@@ -55,6 +55,7 @@ class CreateJobRequest(BaseModel):
     template_id: str = "blurpad_v1"
     campaign_rules: Optional[str] = None
     max_clips: int = 5
+    preferred_height: Optional[int] = 720  # Frame.io proxy height; 0 = original file
 
 
 class CreateJobResponse(BaseModel):
@@ -67,15 +68,39 @@ class GenerateMoreRequest(BaseModel):
     count: int = 3
 
 
+class TogglePostedRequest(BaseModel):
+    platform: str
+
+
+_PLATFORM_KEYS = ("tiktok", "youtube", "instagram")
+
+
+def _clip_posted(clip: VideoClip) -> list[str]:
+    """Parse a clip's posted_platforms JSON text into a list."""
+    try:
+        raw = json.loads(clip.posted_platforms or "[]")
+        return [p for p in raw if p in _PLATFORM_KEYS]
+    except Exception:
+        return []
+
+
 # --- Job Endpoints ---
+
+# Accepted URL hosts in V1
+_ALLOWED_HOSTS = ("drive.google.com", "frame.io")
+_VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".wmv", ".mts", ".m2ts")
+
 
 @router.post("/jobs", status_code=202)
 async def create_job(body: CreateJobRequest):
-    # V1: only Google Drive URLs are accepted — YouTube etc. disabled
-    if body.source_url and "drive.google.com" not in body.source_url:
+    # V1: Google Drive, Frame.io share links, and direct video links are accepted.
+    # YouTube etc. are disabled on purpose (downloader.py enforces the same rule).
+    url = (body.source_url or "").strip().lower()
+    if url and not any(host in url for host in _ALLOWED_HOSTS) and not url.endswith(_VIDEO_EXTS):
         raise HTTPException(
             400,
-            "Only Google Drive URLs and local file uploads are supported in V1",
+            "Supported sources: Google Drive URLs, Frame.io share links, "
+            "direct video file links, or local file uploads",
         )
 
     with Session(engine) as session:
@@ -101,6 +126,7 @@ async def create_job(body: CreateJobRequest):
         "template_id": body.template_id,
         "campaign_rules": body.campaign_rules or "",
         "max_clips": body.max_clips,
+        "preferred_height": body.preferred_height if body.preferred_height is not None else 0,
         "status": JobStatus.PENDING,
     }
     await _dispatch_pipeline(job_id, job_payload)
@@ -181,6 +207,7 @@ def get_job(job_id: int):
                 },
                 "description": c.description,
                 "hashtags": c.hashtags,
+                "posted_platforms": _clip_posted(c),
                 "created_at": c.created_at.isoformat(),
             }
             for c in job.clips
@@ -313,6 +340,7 @@ def list_clips():
                 },
                 "description": c.description,
                 "hashtags": c.hashtags,
+                "posted_platforms": _clip_posted(c),
                 "created_at": c.created_at.isoformat(),
             }
             for c in clips
@@ -348,6 +376,28 @@ def delete_clip(clip_id: int):
         session.add(clip)
         session.commit()
     return {"status": "deleted"}
+
+
+@router.post("/clips/{clip_id}/posted")
+def toggle_posted(clip_id: int, body: TogglePostedRequest):
+    """Mark/unmark a clip as posted to a platform (tiktok | youtube | instagram)."""
+    platform = (body.platform or "").strip().lower()
+    if platform not in _PLATFORM_KEYS:
+        raise HTTPException(400, "Unsupported platform — use tiktok, youtube, or instagram")
+
+    with Session(engine) as session:
+        clip = session.get(VideoClip, clip_id)
+        if not clip:
+            raise HTTPException(404, "Clip not found")
+        posted = _clip_posted(clip)
+        if platform in posted:
+            posted.remove(platform)
+        else:
+            posted.append(platform)
+        clip.posted_platforms = json.dumps(posted)
+        session.add(clip)
+        session.commit()
+        return {"clip_id": clip_id, "platform": platform, "posted_platforms": posted}
 
 
 @router.get("/clips/{clip_id}/download")

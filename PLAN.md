@@ -1,7 +1,7 @@
 # TrimAURA — Build Plan & Roadmap
 
-> **Last updated:** 2026-07-30
-> **Status:** 🟢 V1 deployed on Modal — Warm cream UI, scale-to-zero (no always-on cost), Whisper Turbo, Volume download fix
+> **Last updated:** 2026-07-31
+> **Status:** 🟢 V1 live on Modal — Warm cream UI, scale-to-zero, Whisper Turbo, Supabase Postgres, Frame.io GraphQL downloader, quality selector, Publish Kit (TikTok/Shorts/Reels)
 > **URL:** <https://bassyj32--trimaura-fastapi-app.modal.run>
 
 ***
@@ -14,21 +14,23 @@ trimaura/
 │   ├── __init__.py              # Package init
 │   ├── main.py                  # FastAPI app & static mounting
 │   ├── config.py                # Pydantic Settings & environment validation
-│   ├── database.py              # SQLModel engine & SQLite WAL initialization
-│   ├── models.py                # SQLModel schema (Job, VideoClip, Enums)
+│   ├── database.py              # SQLModel engine — Supabase Postgres pooler on Modal, local fallback
+│   ├── models.py                # SQLModel schema (Job, VideoClip, clip vault)
 │   ├── storage.py               # Cloudflare R2 upload helpers (DISABLED)
 │   │
 │   ├── api/
-│   │   ├── routes.py            # REST endpoints (Jobs, Templates, History, Polling)
+│   │   ├── routes.py            # REST endpoints (Jobs, Upload, Clip Vault, Posted, Download)
 │   │   └── sse.py              # SSE stream helper (legacy, unused)
 │   │
 │   └── pipeline/
 │       ├── orchestrator.py      # Pipeline controller with clip vault features
-│   │   ├── downloader.py       # Phase 1: GDrive-only downloader (YouTube disabled for V1)
-│       ├── transcriber.py      # Phase 2: Groq Whisper V3 (with Tenacity retry)
+│       ├── downloader.py        # Phase 1: GDrive (yt-dlp) + Frame.io GraphQL + local uploads (YouTube disabled)
+│       ├── transcriber.py      # Phase 2: Groq Whisper V3 Turbo (with Tenacity retry)
 │       ├── intelligence.py     # Phase 3: DeepSeek viral moment extractor & titles
 │       ├── video_editor.py     # Phase 4: FFmpeg template applier & renderer
 │       └── seo_generator.py    # Phase 5: DeepSeek SEO title & hashtag builder
+│
+├── supabase/migrations/         # PostgreSQL schema migrations (ALTER TABLE add-column)
 │
 ├── assets/templates/
 │   ├── blurpad_v1/             # Blur-pad template (universal baseline)
@@ -43,16 +45,17 @@ trimaura/
 │   └── seo_generation.txt      # DeepSeek SEO generation prompt
 │
 ├── public/
-│   ├── index.html              # PWA frontend (warm cream design)
+│   ├── index.html              # PWA frontend (warm cream design, publish kit, quality selector)
 │   ├── styles.css              # CSS design system
 │   ├── manifest.json           # Web App Manifest
-│   ├── service-worker.js       # Cache-first service worker
+│   ├── service-worker.js       # Cache-first service worker (⚠ refresh after deploys)
 │   └── template-previews/      # Lightweight JPEG template previews
 │
 ├── modal_app.py                # Modal cloud deployment
 ├── dev_server.py               # Local dev server (proxies /api/* to Modal)
 ├── design/                     # UI/UX design docs (mobile, web)
 ├── PLAN.md                     # ← You are here
+├── prd.md                      # Master product requirements (v4.0)
 ├── .env
 └── requirements.txt
 ```
@@ -80,7 +83,7 @@ trimaura/
 
 | Step | File                            | What                                                                     | Status |
 | ---- | ------------------------------- | ------------------------------------------------------------------------ | ------ |
-| 2.1  | `app/pipeline/downloader.py`    | yt-dlp download + GDrive regex                                           | ✅      |
+| 2.1  | `app/pipeline/downloader.py`    | GDrive (yt-dlp) + Frame.io GraphQL share API + direct video links / local uploads   | ✅      |
 | 2.2  | `app/pipeline/transcriber.py`   | Groq Whisper V3 Turbo with tenacity retry (was V3, cheaper)              | ✅      |
 | 2.3  | `app/pipeline/intelligence.py`  | DeepSeek viral moment analysis                                           | ✅      |
 | 2.4  | `app/pipeline/video_editor.py`  | FFmpeg render with ASS subtitles                                         | ✅      |
@@ -97,13 +100,15 @@ trimaura/
 | Step | File                | What                                                           | Status |
 | ---- | ------------------- | -------------------------------------------------------------- | ------ |
 | 3.1  | `app/api/sse.py`    | SSE event stream helper (legacy, replaced by polling)          | ✅      |
-| 3.2  | `app/api/routes.py` | `POST /api/jobs` — create and dispatch job                     | ✅      |
+| 3.2  | `app/api/routes.py` | `POST /api/jobs` — create + dispatch job (campaign_rules, max_clips, preferred_height) | ✅      |
 | 3.3  | `app/api/routes.py` | `GET /api/jobs` — list all jobs                                | ✅      |
-| 3.4  | `app/api/routes.py` | `GET /api/jobs/{id}` — full job detail with clips              | ✅      |
+| 3.4  | `app/api/routes.py` | `GET /api/jobs/{id}` — full job detail with clips + posted_platforms | ✅      |
 | 3.5  | `app/api/routes.py` | `GET /api/jobs/{id}/poll` — lightweight polling (replaces SSE) | ✅      |
-| 3.6  | `app/api/routes.py` | `GET /api/templates` — list available templates                | ✅      |
-| 3.7  | `app/api/routes.py` | Clip vault CRUD (list, delete, download, refresh-seo)          | ✅      |
-| 3.8  | `app/api/routes.py` | `POST /api/jobs/{id}/generate-more` — generate extra clips     | ✅      |
+| 3.6  | `app/api/routes.py` | `POST /api/jobs/upload` — multipart local upload (up to 500MB) | ✅      |
+| 3.7  | `app/api/routes.py` | `GET /api/templates` — list available templates                | ✅      |
+| 3.8  | `app/api/routes.py` | Clip vault CRUD (list, delete, download, refresh-seo)          | ✅      |
+| 3.9  | `app/api/routes.py` | `POST /api/clips/{id}/posted` — toggle posted platform (tiktok/youtube/instagram) | ✅      |
+| 3.10 | `app/api/routes.py` | `POST /api/jobs/{id}/generate-more` — generate extra clips     | ✅      |
 
 ***
 
@@ -114,7 +119,7 @@ trimaura/
 | Step | File                          | What                                                                                                         | Status |
 | ---- | ----------------------------- | ------------------------------------------------------------------------------------------------------------ | ------ |
 | 4.1  | `modal_app.py`                | Modal image with ffmpeg + Python deps                                                                        | ✅      |
-| 4.2  | `modal_app.py`                | `modal.Volume("trimaura-data")` for SQLite + clips + status                                                  | ✅      |
+| 4.2  | `modal_app.py`                | `modal.Volume("trimaura-data")` for clips + status + uploads (DB moved to Supabase) | ✅      |
 | 4.3  | `modal_app.py`                | `@asgi_app()` wrapping FastAPI, scale-to-zero (removed `min_containers=1`, saves $36/mo)                    | ✅      |
 | 4.4  | `modal_app.py`                | `process_pipeline()` — 3600s timeout (1hr), Volume fallback                                                  | ✅      |
 | 4.5  | `modal_app.py`                | `process_generate_more()` — 600s timeout                                                                     | ✅      |
@@ -181,12 +186,16 @@ trimaura/
 | 7.8  | iOS PWA support (apple-touch-icon, meta tags)                   | ✅          | Can add to iOS home screen                                      |
 | 7.9  | Touch-optimized UI (tap targets, scroll snap)                   | ✅          | 44px min touch targets, smooth scroll                           |
 | 7.10 | End-to-end test with real GDrive video                          | ✅          | Tested with Google Drive URL — pipeline completed, 3 clips      |
-| 7.11 | YouTube disabled for V1 (GDrive + local uploads only)           | ✅          | 3-layer guard: frontend, API validation, downloader check       |
+| 7.11 | YouTube disabled for V1 (GDrive + Frame.io + uploads)           | ✅          | 3-layer guard: frontend, API validation, downloader check       |
 | 7.12 | boxblur=20:5 → 5:2 for faster rendering                         | ✅          | \~3-4x faster blurpad rendering on CPU                          |
 | 7.13 | Fixed missing `Path` import in orchestrator                     | ✅          | Pipeline was crashing at RENDERING stage                        |
 | 7.14 | Database migrated from SQLite → Supabase (PostgreSQL)           | ✅          | `database.py` uses Supabase pooler on Modal, local dev fallback |
-| 7.15 | Mobile testing from phone                                       | ⏳          | App live at URL, needs real-world test                          |
+| 7.15 | Mobile testing from phone                                       | ✅          | Verified on real phone (PWA blank screen fixed via `.frame-wrapper` CSS). Live end-to-end: GDrive + Frame.io jobs → 3 clips each |
 | 7.16 | Cloudflare R2 SSL incident                                      | 🐌 BLOCKED | Incident `py46dmbg0t0t`, using Modal Volume fallback            |
+| 7.17 | Frame.io share links supported                                  | ✅          | GraphQL share API (`base64(share_id)` header). PWA quality selector: 360p/540p/720p/1080p/Original (default 720p). Verified live: 540p → 35.7MB (960x506), 720p → 51MB; job 32 COMPLETED |
+| 7.18 | Publish kit (TikTok / Shorts / Reels)                            | ✅          | Per-clip buttons: copy platform-formatted caption (title + hashtags + optional link) + download MP4 + open upload page. Posted ✓ tracking (toggle endpoint, `posted_platforms` column). Settings has "Your Link" field. Verified live in browser |
+| 7.19 | Supabase migrations for new columns                              | ✅          | `preferred_height` on job, `posted_platforms` on videoclip — `supabase/migrations/`, applied via Supabase MCP |
+| 7.20 | PWA service-worker stale shell                                  | ✅ FIXED    | After deploys the SW serves old HTML → unregister SW + clear caches on load (verified in browser) |
 
 ***
 
@@ -386,6 +395,7 @@ Total effort: **\~2 hours.** After that, your clips will be 80-90% of Opus quali
 | ------------------------------------------ | --------------- | ----------------------------------------------------- |
 | Cloudflare R2 TLS cert not provisioned     | 🔴 BLOCKED      | Clips stored on Modal Volume, served via API download |
 | `generate_more` requires R2 source key     | 🟡 Needs R2 fix | Feature unavailable until R2 is back                  |
+| PWA serves stale shell after deploys       | ✅ FIXED        | Service worker cache — reinstall/reload PWA to see new UI |
 | No user auth (single-user)                 | 🟡 OK for MVP   | Add auth before onboarding others                     |
 | Supabase transaction pool may timeout      | 🟡 OK for MVP   | Modal process_pipeline has 3600s timeout              |
 | Volume reload on cold start                | ✅ FIXED        | `data_volume.reload()` added to download endpoint     |
@@ -397,14 +407,14 @@ Total effort: **\~2 hours.** After that, your clips will be 80-90% of Opus quali
 ## 📦 Deploy Commands
 
 ```bash
-# Deploy to Modal cloud
-modal deploy modal_app.py
+# Deploy to Modal cloud (on Windows use: python -m modal deploy modal_app.py)
+python -m modal deploy modal_app.py
 
 # View app logs
-modal app logs trimaura --since=30m
+python -m modal app logs trimaura --since=30m
 
 # Check secret
-modal secret list
+python -m modal secret list
 
 # Run locally (API only)
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

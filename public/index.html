@@ -37,7 +37,7 @@
   <div class="section-label reveal" style="animation-delay:0.18s;">New short</div>
 
   <div class="url-field reveal" style="animation-delay:0.2s;">
-    <input class="url-input" id="urlInput" type="url" placeholder="Google Drive URL" autocomplete="url">
+    <input class="url-input" id="urlInput" type="url" placeholder="Google Drive / Frame.io URL" autocomplete="url">
   </div>
 
   <div class="divider-or reveal" style="animation-delay:0.22s;">OR</div>
@@ -121,6 +121,11 @@
       <button class="btn-small btn-outline" id="refreshSeoBtn">Refresh SEO</button>
       <button class="btn-small btn-primary" id="downloadBtn">Download MP4</button>
     </div>
+    <div style="margin-top:18px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Publish</div>
+      <div id="publishRow" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <div style="font-size:10px;color:var(--ink-dim);margin-top:8px;line-height:1.4;">Each button copies a ready caption, downloads the MP4, and opens the platform's upload page. Tap ✓ after you post so you never double-post.</div>
+    </div>
   </div>
 </div>
 
@@ -147,6 +152,22 @@
       <span>More content</span>
     </div>
 
+    <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin:16px 0 6px;letter-spacing:0.5px;">Source Quality <span style="font-weight:400;text-transform:none;letter-spacing:0;">(Frame.io links only)</span></label>
+    <select id="frameioQualitySelect" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:14px;font-family:var(--font);outline:none;-webkit-appearance:none;appearance:none;">
+      <option value="360">360p — small file</option>
+      <option value="540">540p — good for quick clips</option>
+      <option value="720" selected>720p — recommended (small, sharp)</option>
+      <option value="1080">1080p — full HD proxy</option>
+      <option value="0">Original — full source file</option>
+    </select>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--ink-dim);margin-top:2px;">
+      <span>Faster, uses less data</span>
+      <span>Best quality</span>
+    </div>
+
+    <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin:16px 0 6px;letter-spacing:0.5px;">Your Link <span style="font-weight:400;text-transform:none;letter-spacing:0;">(Vyro profile / affiliate — added to captions)</span></label>
+    <input id="linkInput" type="url" placeholder="https://vyro.club/yourprofile or your affiliate link" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:14px;font-family:var(--font);outline:none;">
+
     <div style="display:flex;gap:8px;margin-top:20px;">
       <button class="btn-small btn-outline" id="modalCancel" style="flex:1;">Cancel</button>
       <button class="btn-small btn-primary" id="modalConfirm" style="flex:1;">Start Generating</button>
@@ -166,6 +187,8 @@ let selectedClip = null;
 let selectedFile = null;
 let campaignRules = '';
 let maxClips = 5;
+let preferredHeight = 720;
+let myLink = localStorage.getItem('trimaura_link') || '';
 let currentResultsJobId = null;
 
 // Template gradient mapping (fallback)
@@ -277,6 +300,8 @@ function openSettings() {
   campaignRulesInput.value = campaignRules;
   maxClipsSlider.value = maxClips;
   maxClipsValue.textContent = maxClips;
+  frameioQualitySelect.value = String(preferredHeight);
+  linkInput.value = myLink;
   settingsOverlay.classList.add('open');
   settingsPanel.classList.add('open');
 }
@@ -297,6 +322,9 @@ maxClipsSlider.addEventListener('input', () => {
 modalConfirm.addEventListener('click', () => {
   campaignRules = campaignRulesInput.value.trim();
   maxClips = parseInt(maxClipsSlider.value);
+  preferredHeight = parseInt(frameioQualitySelect.value);
+  myLink = linkInput.value.trim();
+  localStorage.setItem('trimaura_link', myLink);
   closeSettings();
   showToast('Settings saved: ' + maxClips + ' clips max');
 });
@@ -415,7 +443,7 @@ async function loadHistory() {
       historyEl.innerHTML = `<div class="vault-empty">
         <span class="vault-empty-icon">🎬</span>
         <p class="vault-empty-title">Welcome to TrimAURA</p>
-        <p class="vault-empty-desc">Upload a video or paste a Google Drive URL, pick a template, and generate shorts with AI-powered captions and SEO.</p>
+        <p class="vault-empty-desc">Paste a Google Drive or Frame.io URL, upload a video, pick a template, and generate shorts with AI-powered captions and SEO.</p>
         <div class="vault-empty-steps">
           <div class="vault-step"><span class="vault-step-num">1</span> Add your video</div>
           <div class="vault-step"><span class="vault-step-num">2</span> Pick a template</div>
@@ -461,8 +489,8 @@ generateBtn.addEventListener('click', async () => {
   const hasFile = selectedFile !== null;
   const url = urlInput.value.trim();
 
-  if (!hasFile && !url) { showToast('Select a file or enter a Google Drive URL'); return; }
-  if (url && !url.includes('drive.google.com')) { showToast('Only Google Drive URLs are supported in V1'); return; }
+  if (!hasFile && !url) { showToast('Select a file or enter a Google Drive / Frame.io URL'); return; }
+  if (url && !url.includes('drive.google.com') && !url.includes('frame.io')) { showToast('Supported: Google Drive, Frame.io, or a direct video file link'); return; }
 
   generateBtn.disabled = true;
   progressWrap.classList.add('active');
@@ -510,7 +538,8 @@ generateBtn.addEventListener('click', async () => {
           source_url: url,
           template_id: templateId,
           campaign_rules: campaignRules,
-          max_clips: maxClips
+          max_clips: maxClips,
+          preferred_height: preferredHeight
         })
       });
     }
@@ -620,6 +649,7 @@ function showClip(clip) {
   drawerTitle.textContent = clip.titles?.curiosity || clip.description || 'Clip ' + clip.clip_id;
   drawerMeta.textContent = (clip.duration || '0') + 's' + (clip.hashtags ? ' · ' + clip.hashtags : '');
   downloadBtn.onclick = () => downloadSingleClip(clip.clip_id);
+  renderPublishPanel();
 }
 
 drawerOverlay.addEventListener('click', closeDrawer);
@@ -697,6 +727,70 @@ async function copyText(text, msg) {
     showToast(msg);
   } catch {
     showToast('Copy failed');
+  }
+}
+
+// --- Publish Kit ---
+const PUBLISH_PLATFORMS = [
+  { key: 'tiktok',    label: 'Post to TikTok', url: 'https://www.tiktok.com/upload',           color: '#010101', maxTags: 4, shorts: false },
+  { key: 'youtube',   label: 'Post to Shorts', url: 'https://www.youtube.com/upload',          color: '#CC0000', maxTags: 3, shorts: true  },
+  { key: 'instagram', label: 'Post to Reels',  url: 'https://www.instagram.com/reels/upload/', color: '#C13584', maxTags: 5, shorts: false },
+];
+
+function buildCaption(platform, clip) {
+  const title = (clip.titles && (clip.titles.curiosity || clip.titles.direct)) || 'New short';
+  const tags = (clip.hashtags || '').split(/\s+/).filter(Boolean).slice(0, platform.maxTags).join(' ');
+  const link = myLink ? '\n\n' + myLink : '';
+  if (platform.key === 'youtube') return title + '\n\n#shorts' + (tags ? '\n' + tags : '') + link;
+  if (platform.key === 'instagram') return title + link + (tags ? '\n\n' + tags : '');
+  return title + (tags ? '\n\n' + tags : '') + link; // tiktok
+}
+
+function postedList(clip) {
+  return Array.isArray(clip.posted_platforms) ? clip.posted_platforms : [];
+}
+
+function renderPublishPanel() {
+  const row = document.getElementById('publishRow');
+  if (!row || !selectedClip) return;
+  const posted = postedList(selectedClip);
+  row.innerHTML = PUBLISH_PLATFORMS.map(p => {
+    const done = posted.includes(p.key);
+    return `<div style="display:flex;align-items:center;gap:8px;">
+      <button class="btn-small btn-primary" data-pub="${p.key}" style="flex:1;background:${p.color};border-color:${p.color};justify-content:center;">${p.label}</button>
+      <button class="btn-small btn-outline" data-toggle="${p.key}" style="min-width:56px;${done ? 'background:var(--accent);border-color:var(--accent);color:#fff;' : ''}">${done ? '✓ Posted' : 'Mark'}</button>
+    </div>`;
+  }).join('');
+  row.querySelectorAll('[data-pub]').forEach(b => b.addEventListener('click', () => postToPlatform(b.dataset.pub)));
+  row.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => togglePosted(b.dataset.toggle)));
+}
+
+async function postToPlatform(key) {
+  if (!selectedClip) return;
+  const p = PUBLISH_PLATFORMS.find(x => x.key === key);
+  if (!p) return;
+  const caption = buildCaption(p, selectedClip);
+  await copyText(caption, 'Caption copied — go post it!');
+  downloadSingleClip(selectedClip.clip_id);
+  window.open(p.url, '_blank');
+}
+
+async function togglePosted(key) {
+  if (!selectedClip) return;
+  try {
+    const res = await fetch(`/api/clips/${selectedClip.clip_id}/posted`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform: key })
+    });
+    const data = await res.json();
+    if (data.posted_platforms) {
+      selectedClip.posted_platforms = data.posted_platforms;
+      renderPublishPanel();
+      showToast(data.posted_platforms.includes(key) ? 'Marked as posted ✓' : 'Unmarked');
+    }
+  } catch {
+    showToast('Could not update posted status');
   }
 }
 

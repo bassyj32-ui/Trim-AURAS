@@ -46,7 +46,11 @@ async def execute_pipeline(job_id: int):
         _update_job(job_id, status=JobStatus.DOWNLOADING, progress_percentage=10)
         job = _get_job(job_id)
         import asyncio
-        video_path = await asyncio.to_thread(execute_download, job.source_url)
+        video_path = await asyncio.to_thread(
+            execute_download,
+            job.source_url,
+            preferred_height=job.preferred_height if job.preferred_height is not None else 720,
+        )
 
         # Upload source video to R2 for re-generation (non-fatal)
         source_key = f"sources/{job_id}_source.mp4"
