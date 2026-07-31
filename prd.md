@@ -289,14 +289,14 @@ Initializes a video rendering job from a source URL.
 }
 ```
 
-| Field             | Type   | Default       | Notes                                                        |
-| ----------------- | ------ | ------------- | ------------------------------------------------------------ |
-| `title`           | str    | `"Untitled Job"` | Job display name                                           |
-| `source_url`      | str    | required      | Google Drive, Frame.io share link, or direct video URL       |
-| `template_id`     | str    | `"blurpad_v1"` | Template used for rendering                                  |
-| `campaign_rules`  | str    | `""`          | SEO campaign instructions for the clip analyzer              |
-| `max_clips`       | int    | `5`           | Maximum clips to generate                                    |
-| `preferred_height`| int    | `720`         | Frame.io proxy height; `0` = original full file (360/540/720/1080) |
+| Field              | Type | Default          | Notes                                                              |
+| ------------------ | ---- | ---------------- | ------------------------------------------------------------------ |
+| `title`            | str  | `"Untitled Job"` | Job display name                                                   |
+| `source_url`       | str  | required         | Google Drive, Frame.io share link, or direct video URL             |
+| `template_id`      | str  | `"blurpad_v1"`   | Template used for rendering                                        |
+| `campaign_rules`   | str  | `""`             | SEO campaign instructions for the clip analyzer                    |
+| `max_clips`        | int  | `5`              | Maximum clips to generate                                          |
+| `preferred_height` | int  | `720`            | Frame.io proxy height; `0` = original full file (360/540/720/1080) |
 
 - **Response** **`202 Accepted`:**
 
@@ -365,13 +365,13 @@ Generates additional clips for an existing job. Body: `{"count": 3}`.
 
 ### Clip Vault endpoints
 
-| Endpoint                                  | Method | Purpose                                          |
-| ----------------------------------------- | ------ | ------------------------------------------------ |
-| `GET /api/clips`                          | GET    | List all clips with SEO metadata + `posted_platforms` |
-| `GET /api/clips/{id}/download`            | GET    | Stream MP4 file (serves from Modal Volume)       |
-| `POST /api/clips/{id}/refresh-seo`        | POST   | Regenerate titles/description/hashtags via DeepSeek |
-| `POST /api/clips/{id}/posted`             | POST   | Toggle posted platform. Body: `{"platform": "tiktok"}` (tiktok \| youtube \| instagram) |
-| `DELETE /api/clips/{id}`                  | DELETE | Soft-delete a clip                               |
+| Endpoint                           | Method | Purpose                                                                                 |
+| ---------------------------------- | ------ | --------------------------------------------------------------------------------------- |
+| `GET /api/clips`                   | GET    | List all clips with SEO metadata + `posted_platforms`                                   |
+| `GET /api/clips/{id}/download`     | GET    | Stream MP4 file (serves from Modal Volume)                                              |
+| `POST /api/clips/{id}/refresh-seo` | POST   | Regenerate titles/description/hashtags via DeepSeek                                     |
+| `POST /api/clips/{id}/posted`      | POST   | Toggle posted platform. Body: `{"platform": "tiktok"}` (tiktok \| youtube \| instagram) |
+| `DELETE /api/clips/{id}`           | DELETE | Soft-delete a clip                                                                      |
 
 ### `GET /api/templates`
 

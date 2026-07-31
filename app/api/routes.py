@@ -297,10 +297,10 @@ async def api_generate_more(job_id: int, body: GenerateMoreRequest = GenerateMor
         job = session.get(Job, job_id)
         if not job:
             raise HTTPException(404, "Job not found")
-        if not job.source_r2_key or not job.transcript_json:
+        if not job.transcript_json:
             raise HTTPException(
                 400,
-                "Job has no saved source or transcript. Run the initial pipeline first.",
+                "Job has no saved transcript. Run the initial pipeline first.",
             )
 
     await _dispatch_generate_more(job_id, count=body.count)

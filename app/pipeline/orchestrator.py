@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.database import engine
 from app.models import Job, JobStatus, VideoClip
@@ -11,6 +11,10 @@ from app.pipeline.intelligence import execute_analyze
 from app.pipeline.video_editor import execute_render
 from app.pipeline.seo_generator import execute_seo
 from app.storage import upload_to_r2
+
+# Persistent Volume paths (match modal_app.py)
+SOURCE_CACHE_DIR = Path("/mnt/data/sources")
+CLIPS_DIR = Path("/mnt/data/clips")
 
 
 def _update_job(job_id: int, **kwargs):
@@ -36,6 +40,85 @@ def _cleanup_temp(*paths: str):
             pass
 
 
+def _cache_source(job_id: int, video_path: str) -> str:
+    """Copy the source video onto the Volume so `generate-more` works even
+    when R2 is unavailable. Returns the cached path (or ``video_path`` on
+    non-Modal setups where the volume dir doesn't exist)."""
+    try:
+        SOURCE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        dest = SOURCE_CACHE_DIR / f"{job_id}_source.mp4"
+        import shutil
+        shutil.copy2(video_path, str(dest))
+        return str(dest)
+    except Exception as e:
+        print(f"[generate-more] source cache failed (non-fatal): {e}")
+        return video_path
+
+
+async def _resolve_source(job_id: int, job) -> str:
+    """Locate the job's source video, trying, in order:
+
+    1. R2 (``source_r2_key``) — used when the pipeline upload succeeded.
+    2. The Volume cache at /mnt/data/sources/{job_id}_source.mp4.
+    3. Re-download from the original ``source_url``.
+
+    The resolved file is cached on the Volume for future calls.
+    """
+    import asyncio
+    import tempfile
+
+    from app.config import settings
+
+    # 1) R2
+    if job.source_r2_key:
+        try:
+            import boto3
+            from botocore.config import Config as BotoConfig
+
+            client = boto3.client(
+                "s3",
+                endpoint_url=f"https://{settings.r2_account_id}.r2.cloudflarestorage.com",
+                aws_access_key_id=settings.r2_access_key_id,
+                aws_secret_access_key=settings.r2_secret_access_key,
+                config=BotoConfig(
+                    signature_version="s3v4",
+                    region_name="us-east-1",
+                    retries={"max_attempts": 2, "mode": "standard"},
+                ),
+                verify=settings.r2_verify_ssl,
+            )
+            tmp_video = tempfile.mktemp(suffix=".mp4")
+            client.download_file(settings.r2_bucket_name, job.source_r2_key, tmp_video)
+            if os.path.exists(tmp_video) and os.path.getsize(tmp_video) > 0:
+                print(f"[generate-more] source from R2: {job.source_r2_key}")
+                _cache_source(job_id, tmp_video)
+                return tmp_video
+        except Exception as e:
+            print(f"[generate-more] R2 source download failed (non-fatal): {e}")
+
+    # 2) Volume cache
+    cached = SOURCE_CACHE_DIR / f"{job_id}_source.mp4"
+    if cached.exists() and cached.stat().st_size > 0:
+        print(f"[generate-more] source from Volume: {cached}")
+        return str(cached)
+
+    # 3) Re-download from the original URL
+    if job.source_url:
+        print(f"[generate-more] re-downloading source from: {job.source_url[:80]}")
+        path = await asyncio.to_thread(
+            execute_download,
+            job.source_url,
+            preferred_height=job.preferred_height if job.preferred_height is not None else 720,
+        )
+        _cache_source(job_id, path)
+        return path
+
+    raise RuntimeError(
+        "Job has no source video (no R2 key, volume cache, or source URL). "
+        "Cannot generate more clips."
+    )
+
+
 async def execute_pipeline(job_id: int):
     """Run the full pipeline for a given job. Updates job status at each step."""
     video_path = None
@@ -57,6 +140,10 @@ async def execute_pipeline(job_id: int):
         r2_url = upload_to_r2(video_path, source_key)
         if r2_url:
             _update_job(job_id, source_r2_key=source_key)
+
+        # Cache source on the Volume too, so "generate more" works even when
+        # R2 is unavailable (R2 TLS cert incident, see app/config.py).
+        _cache_source(job_id, video_path)
 
         # --- Phase 2: Transcribe ---
         _update_job(job_id, status=JobStatus.TRANSCRIBING, progress_percentage=25)
@@ -80,7 +167,6 @@ async def execute_pipeline(job_id: int):
         transcript_text = _get_transcript_text(segments)
         seo_data = await execute_seo(transcript_text, campaign_rules=job.campaign_rules or "")
 
-        CLIPS_DIR = Path("/mnt/data/clips")
         CLIPS_DIR.mkdir(parents=True, exist_ok=True)
 
         with Session(engine) as session:
@@ -135,22 +221,32 @@ async def generate_more_clips(job_id: int, count: int = 3):
     Bypasses download + transcribe. Only runs analyze → render → SEO → upload.
     """
     rendered_paths = []
+    tmp_video = None
 
     try:
         _update_job(job_id, status=JobStatus.ANALYZING, progress_percentage=40)
         job = _get_job(job_id)
 
-        if not job.source_r2_key or not job.transcript_json:
-            raise RuntimeError("Job has no saved source video or transcript. Cannot generate more clips.")
+        if not job.transcript_json:
+            raise RuntimeError("Job has no saved transcript. Cannot generate more clips.")
 
         # Load saved segments from DB
         segments = json.loads(job.transcript_json)
 
-        # Find existing clip timestamps so DeepSeek avoids repeats
-        existing_clips = [
-            {"start": c.start_time, "end": c.end_time, "reason": ""}
-            for c in job.clips if not c.deleted
-        ]
+        # Find existing clip timestamps so DeepSeek avoids repeats.
+        # `job.clips` is a lazy relationship on a detached instance — query
+        # inside a fresh session instead.
+        existing_clips = []
+        with Session(engine) as session:
+            rows = session.exec(
+                select(VideoClip).where(
+                    VideoClip.job_id == job_id, VideoClip.deleted == False
+                )
+            ).all()
+            existing_clips = [
+                {"start": c.start_time, "end": c.end_time, "reason": ""}
+                for c in rows
+            ]
 
         # Analyze with existing clips as exclusions
         max_to_generate = min(count, job.max_clips)
@@ -159,29 +255,21 @@ async def generate_more_clips(job_id: int, count: int = 3):
             max_clips=max_to_generate,
             existing_clips=existing_clips,
         )
+        if not clips:
+            # DeepSeek refused to suggest anything new (existing clips cover
+            # the highlights). Retry once without exclusions so "generate
+            # more" can still produce additional crops of the same video.
+            print(
+                "[generate-more] no new suggestions with exclusions; "
+                "retrying without exclusions"
+            )
+            clips = await execute_analyze(segments, max_clips=max_to_generate)
 
         if not clips:
-            raise RuntimeError("DeepSeek returned no new clip suggestions")
+            raise RuntimeError("DeepSeek returned no clip suggestions")
 
-        # Download source video from R2
-        import tempfile
-        import boto3
-        from botocore.config import Config as BotoConfig
-        from app.config import settings
-
-        client = boto3.client(
-            "s3",
-            endpoint_url=f"https://{settings.r2_account_id}.r2.cloudflarestorage.com",
-            aws_access_key_id=settings.r2_access_key_id,
-            aws_secret_access_key=settings.r2_secret_access_key,
-            config=BotoConfig(
-                signature_version="s3v4",
-                region_name="us-east-1",
-                retries={"max_attempts": 3, "mode": "standard"},
-            ),
-        )
-        tmp_video = tempfile.mktemp(suffix=".mp4")
-        client.download_file(settings.r2_bucket_name, job.source_r2_key, tmp_video)
+        # Locate the source video: R2 → Volume cache → re-download
+        tmp_video = await _resolve_source(job_id, job)
 
         # Render new clips
         _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
@@ -189,6 +277,8 @@ async def generate_more_clips(job_id: int, count: int = 3):
 
         # SEO + upload
         transcript_text = _get_transcript_text(segments)
+
+        CLIPS_DIR.mkdir(parents=True, exist_ok=True)
 
         with Session(engine) as session:
             db_job = session.get(Job, job_id)
@@ -203,14 +293,15 @@ async def generate_more_clips(job_id: int, count: int = 3):
                 clip_idx = len([c for c in db_job.clips if not c.deleted]) + i
                 key = f"clips/{job_id}_extra_{clip_idx}.mp4"
                 r2_url = upload_to_r2(rendered_path, key)
+                is_offline = r2_url is None
 
                 db_clip = VideoClip(
                     job_id=job_id,
                     start_time=clip_info["start"],
                     end_time=clip_info["end"],
                     duration=clip_info["end"] - clip_info["start"],
-                    r2_url=r2_url,
-                    r2_key=key,
+                    r2_url=rendered_path,       # will update below
+                    r2_key=key if not is_offline else "",
                     title_curiosity=seo_data.get("title_curiosity", ""),
                     title_direct=seo_data.get("title_direct", ""),
                     title_question=seo_data.get("title_question", ""),
@@ -218,6 +309,14 @@ async def generate_more_clips(job_id: int, count: int = 3):
                     hashtags=seo_data.get("hashtags", ""),
                 )
                 session.add(db_clip)
+                session.flush()  # get db_clip.id before commit
+
+                # Copy to predictable path that the download endpoint can serve
+                clip_serve_path = CLIPS_DIR / f"{job_id}_{db_clip.id}.mp4"
+                import shutil
+                shutil.copy2(rendered_path, str(clip_serve_path))
+                db_clip.r2_url = str(clip_serve_path)
+
                 session.commit()
 
         _update_job(job_id, status=JobStatus.COMPLETED, progress_percentage=100)
@@ -229,6 +328,9 @@ async def generate_more_clips(job_id: int, count: int = 3):
     finally:
         for p in rendered_paths:
             _cleanup_temp(p)
+        # Clean up temp source downloads, but keep the Volume cache file.
+        if tmp_video and not str(tmp_video).startswith(str(SOURCE_CACHE_DIR)):
+            _cleanup_temp(tmp_video)
 
 
 async def refresh_clip_seo(clip_id: int) -> dict[str, str]:

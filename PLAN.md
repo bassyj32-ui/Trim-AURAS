@@ -347,7 +347,7 @@ This phase is what turns TrimAURA from a personal tool into a SaaS product servi
 | Download clips             | ✅ Yes             | Served from Modal Volume via API                      |
 | Video player in drawer     | ✅ Yes             | Streams from API download endpoint                    |
 | Clip vault (14-day)        | ✅ Yes             | Supabase PostgreSQL + clips on Modal Volume           |
-| Generate More clips        | ❌ No              | Requires R2 for saved source (blocked until R2 fixed) |
+| Generate More clips        | ✅ Yes             | Volume-cached source + re-download; R2 used when available |
 | PWA install to home screen | ✅ Yes             | HTTPS ready, manifest ready                           |
 | Offline access             | ⏳ Needs PNG icons | Service worker works, icons pending                   |
 
@@ -393,8 +393,8 @@ Total effort: **\~2 hours.** After that, your clips will be 80-90% of Opus quali
 
 | Issue                                      | Status          | Workaround                                            |
 | ------------------------------------------ | --------------- | ----------------------------------------------------- |
-| Cloudflare R2 TLS cert not provisioned     | 🔴 BLOCKED      | Clips stored on Modal Volume, served via API download |
-| `generate_more` requires R2 source key     | 🟡 Needs R2 fix | Feature unavailable until R2 is back                  |
+| Cloudflare R2 TLS cert not provisioned     | 🔴 BLOCKED      | Clips stored on Modal Volume, served via API download. Probe with `python scripts/probe_r2.py` |
+| `generate_more` no longer needs R2         | ✅ FIXED        | Source resolved R2 → Volume cache → re-download; verified live (job 32 → clip 55, 27 MB, HTTP 200) |
 | PWA serves stale shell after deploys       | ✅ FIXED        | Service worker cache — reinstall/reload PWA to see new UI |
 | No user auth (single-user)                 | 🟡 OK for MVP   | Add auth before onboarding others                     |
 | Supabase transaction pool may timeout      | 🟡 OK for MVP   | Modal process_pipeline has 3600s timeout              |

@@ -93,6 +93,7 @@
   <div id="resultsList" class="reveal" style="animation-delay:0.62s;">
     <!-- Rendered by JS after job completes -->
   </div>
+  <button class="ghost-btn reveal hidden" id="generateMoreBtn" style="animation-delay:0.63s;margin-top:12px;width:100%;">＋ Generate more clips</button>
 
   <!-- Clip Vault -->
   <div class="section-label reveal" style="animation-delay:0.66s;margin-top:24px;">Clip vault <span class="hint" id="vaultCount">0 pending</span></div>
@@ -228,6 +229,7 @@ const progressStatus = document.getElementById('progressStatus');
 const progressPct = document.getElementById('progressPct');
 const resultsList = document.getElementById('resultsList');
 const resultsCount = document.getElementById('resultsCount');
+const generateMoreBtn = document.getElementById('generateMoreBtn');
 const historyEl = document.getElementById('historyList');
 const vaultCount = document.getElementById('vaultCount');
 const drawerOverlay = document.getElementById('drawerOverlay');
@@ -364,6 +366,7 @@ function renderResults(jobId) {
     .then(r => r.json())
     .then(job => {
       const clips = job.clips || [];
+      generateMoreBtn.classList.toggle('hidden', job.status !== 'COMPLETED');
       if (clips.length === 0) {
         resultsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--ink-dim);font-size:12px;">No clips generated</div>';
         resultsCount.textContent = '0 clips';
@@ -423,6 +426,35 @@ downloadAllBtn.addEventListener('click', () => {
       showToast('Downloads started');
     })
     .catch(() => showToast('Download failed'));
+});
+
+// --- Generate More ---
+generateMoreBtn.addEventListener('click', async () => {
+  if (!currentResultsJobId) return;
+  generateMoreBtn.disabled = true;
+  generateMoreBtn.textContent = 'Generating more...';
+  try {
+    const res = await fetch(`/api/jobs/${currentResultsJobId}/generate-more`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count: 3 })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.detail || 'Generate more failed');
+      generateMoreBtn.disabled = false;
+      generateMoreBtn.textContent = '＋ Generate more clips';
+      return;
+    }
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Processing...';
+    showToast('Generating 3 more clips...');
+    startPolling(currentResultsJobId);
+  } catch (e) {
+    showToast('Generate more failed');
+    generateMoreBtn.disabled = false;
+    generateMoreBtn.textContent = '＋ Generate more clips';
+  }
 });
 
 // --- Vault / History ---
@@ -572,6 +604,8 @@ function startPolling(jobId) {
         pollTimer = null;
         generateBtn.disabled = false;
         generateBtn.textContent = 'Generate shorts';
+        generateMoreBtn.disabled = false;
+        generateMoreBtn.textContent = '＋ Generate more clips';
         progressWrap.classList.remove('active');
         clearUpload();
         renderResults(jobId);
@@ -584,6 +618,8 @@ function startPolling(jobId) {
         pollTimer = null;
         generateBtn.disabled = false;
         generateBtn.textContent = 'Generate shorts';
+        generateMoreBtn.disabled = false;
+        generateMoreBtn.textContent = '＋ Generate more clips';
         resultsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--red);font-size:12px;">Generation failed: ' + (data.error || 'Unknown error') + '</div>';
         showToast('Failed: ' + (data.error || 'Unknown error'));
         sendNotification('TrimAURA', '❌ Generation failed: ' + (data.error || 'Unknown error'));

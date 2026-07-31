@@ -169,6 +169,16 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
 }
 .icon-btn:active{transform:scale(0.9);}
 
+.ghost-btn{
+  padding:12px 20px;border-radius:var(--radius-pill);
+  background:var(--card);border:1px solid var(--hairline);color:var(--ink);
+  font-size:13px;font-weight:600;font-family:var(--font);cursor:pointer;
+  transition:transform 0.12s ease,box-shadow 0.2s ease;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+}
+.ghost-btn:active{transform:scale(0.97);}
+.ghost-btn:disabled{opacity:0.5;cursor:not-allowed;}
+
 /* --- Progress --- */
 .progress-track{
   display:none;height:4px;background:var(--hairline);border-radius:10px;margin:16px 0 6px;overflow:hidden;

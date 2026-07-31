@@ -75,6 +75,12 @@ def _write_status(job_id: int, status: str, progress: int, error: str | None = N
     Path(f"{STATUS_DIR}/job_{job_id}.json").write_text(
         __import__("json").dumps(payload)
     )
+    # Commit so the web container sees the new status file immediately
+    # (without this, polls may read a stale file for a long time).
+    try:
+        data_volume.commit()
+    except Exception as e:
+        print(f"[status] volume commit failed (non-fatal): {e}")
 
 
 def _ensure_path():
@@ -240,6 +246,8 @@ def _sync_clips_to_volume(job_id: int):
             local_path = clip.r2_url
             if local_path and Path(local_path).exists():
                 dest = Path(CLIPS_DIR) / f"{job_id}_{clip.id}.mp4"
+                if Path(local_path) == dest:
+                    continue  # already in place on the Volume
                 shutil.copy2(local_path, str(dest))
                 clip.r2_url = str(dest)  # Volume path, readable by download endpoint
                 session.add(clip)
