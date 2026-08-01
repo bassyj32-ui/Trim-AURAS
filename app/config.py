@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str = ""
 
+    # Web Push (VAPID) — PWA push notifications
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = "mailto:trimaura@solo.app"
+
     # App
     database_url: str = "postgresql://postgres:@localhost:5432/postgres"
     app_env: str = "development"

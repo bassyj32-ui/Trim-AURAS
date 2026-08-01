@@ -7,7 +7,11 @@ from app.database import engine
 from app.models import Job, JobStatus, VideoClip
 from app.pipeline.downloader import execute_download
 from app.pipeline.transcriber import execute_transcribe
-from app.pipeline.intelligence import execute_analyze
+from app.pipeline.intelligence import (
+    execute_analyze,
+    extract_video_signals,
+    snap_clips_to_signals,
+)
 from app.pipeline.video_editor import execute_render
 from app.pipeline.seo_generator import execute_seo
 from app.storage import upload_to_r2
@@ -15,6 +19,17 @@ from app.storage import upload_to_r2
 # Persistent Volume paths (match modal_app.py)
 SOURCE_CACHE_DIR = Path("/mnt/data/sources")
 CLIPS_DIR = Path("/mnt/data/clips")
+
+
+def _volume_commit():
+    """Force a Modal Volume commit so the web container can serve a clip as
+    soon as it's written (progressive publishing), not only at job end."""
+    try:
+        import modal
+
+        modal.Volume.from_name("trimaura-data").commit()
+    except Exception as e:
+        print(f"[volume] commit failed (non-fatal): {e}")
 
 
 def _update_job(job_id: int, **kwargs):
@@ -25,6 +40,32 @@ def _update_job(job_id: int, **kwargs):
                 setattr(job, k, v)
             session.add(job)
             session.commit()
+    # Fire push notifications for terminal states (fire-and-forget)
+    status = kwargs.get("status")
+    if status in (JobStatus.COMPLETED, JobStatus.FAILED):
+        _notify_terminal(status, kwargs.get("error_message"))
+
+
+def _notify_terminal(status: str, error: str | None = None):
+    """Push a notification when a job finishes or fails, so the user can
+    deploy the clips from their phone without watching the page."""
+    try:
+        from app.push import notify_all
+
+        if status == JobStatus.COMPLETED:
+            notify_all(
+                "TrimAURA — Ready ✅",
+                "Your shorts are done. Open the app to review & deploy.",
+                data={"jobDone": True},
+            )
+        elif status == JobStatus.FAILED:
+            notify_all(
+                "TrimAURA — Failed ❌",
+                f"Processing error: {(error or 'Unknown error')[:140]}",
+                data={"jobDone": True},
+            )
+    except Exception as exc:
+        print(f"[push] notification dispatch failed (non-fatal): {exc}")
 
 
 def _get_transcript_text(segments: list[dict]) -> str:
@@ -149,12 +190,28 @@ async def execute_pipeline(job_id: int):
         _update_job(job_id, status=JobStatus.TRANSCRIBING, progress_percentage=25)
         segments = await execute_transcribe(video_path)
 
+        # Guard: a video with no usable speech can't produce clips. Fail with
+        # a clear message instead of a confusing downstream error.
+        if not segments or len(_get_transcript_text(segments).strip()) < 10:
+            raise RuntimeError(
+                "No speech detected in this video (transcript is empty). "
+                "Please use a video with clear spoken audio."
+            )
+
         # Save full transcript to job for later re-generation
         _update_job(job_id, transcript_json=json.dumps(segments))
 
         # --- Phase 3: Analyze ---
         _update_job(job_id, status=JobStatus.ANALYZING, progress_percentage=40)
-        clips = await execute_analyze(segments, max_clips=job.max_clips)
+        # Cheap FFmpeg "sight" probes: scene cuts, loud moments, dead air
+        video_signals = await asyncio.to_thread(extract_video_signals, video_path)
+        clips = await execute_analyze(
+            segments,
+            max_clips=job.max_clips,
+            campaign_rules=job.campaign_rules or "",
+            video_signals=video_signals,
+        )
+        clips = snap_clips_to_signals(clips, video_signals)
 
         if not clips:
             raise RuntimeError("DeepSeek returned no clip suggestions")
@@ -200,10 +257,18 @@ async def execute_pipeline(job_id: int):
                 shutil.copy2(rendered_path, str(clip_serve_path))
                 db_clip.r2_url = str(clip_serve_path)
 
+                # Publish this clip NOW: commit to the DB and the Volume so it
+                # is visible/downloadable while later clips are still rendering,
+                # and survives a mid-render failure instead of being rolled
+                # back with the whole job.
+                session.commit()
+                _volume_commit()
+
             db_job.status = JobStatus.COMPLETED
             db_job.progress_percentage = 100
             session.add(db_job)
             session.commit()
+            _notify_terminal(JobStatus.COMPLETED)
 
     except Exception as e:
         _update_job(job_id, status=JobStatus.FAILED, error_message=str(e))
@@ -248,12 +313,21 @@ async def generate_more_clips(job_id: int, count: int = 3):
                 for c in rows
             ]
 
+        # Locate the source video: R2 → Volume cache → re-download
+        tmp_video = await _resolve_source(job_id, job)
+
+        # Cheap FFmpeg "sight" probes: scene cuts, loud moments, dead air
+        import asyncio
+        video_signals = await asyncio.to_thread(extract_video_signals, tmp_video)
+
         # Analyze with existing clips as exclusions
         max_to_generate = min(count, job.max_clips)
         clips = await execute_analyze(
             segments,
             max_clips=max_to_generate,
             existing_clips=existing_clips,
+            campaign_rules=job.campaign_rules or "",
+            video_signals=video_signals,
         )
         if not clips:
             # DeepSeek refused to suggest anything new (existing clips cover
@@ -263,13 +337,17 @@ async def generate_more_clips(job_id: int, count: int = 3):
                 "[generate-more] no new suggestions with exclusions; "
                 "retrying without exclusions"
             )
-            clips = await execute_analyze(segments, max_clips=max_to_generate)
+            clips = await execute_analyze(
+                segments,
+                max_clips=max_to_generate,
+                campaign_rules=job.campaign_rules or "",
+                video_signals=video_signals,
+            )
 
         if not clips:
             raise RuntimeError("DeepSeek returned no clip suggestions")
 
-        # Locate the source video: R2 → Volume cache → re-download
-        tmp_video = await _resolve_source(job_id, job)
+        clips = snap_clips_to_signals(clips, video_signals)
 
         # Render new clips
         _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
@@ -318,6 +396,7 @@ async def generate_more_clips(job_id: int, count: int = 3):
                 db_clip.r2_url = str(clip_serve_path)
 
                 session.commit()
+                _volume_commit()
 
         _update_job(job_id, status=JobStatus.COMPLETED, progress_percentage=100)
 

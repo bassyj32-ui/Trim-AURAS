@@ -4,9 +4,9 @@
   "description": "Clean universal baseline — centered video on blurred background, white subtitles with cyan highlights. Works for any niche.",
   "canvas": { "width": 1080, "height": 1920, "fps": 30 },
   "video_slot": {
-    "width": 1080, "height": 1080,
-    "x_offset": 0, "y_offset": 420,
-    "fit_mode": "contain"
+    "width": 1080, "height": 1920,
+    "x_offset": 0, "y_offset": 0,
+    "fit_mode": "cover"
   },
   "color_grade": {
     "brightness": 0.0, "contrast": 1.0,

@@ -57,6 +57,15 @@ class VideoClip(SQLModel, table=True):
     job: Optional[Job] = Relationship(back_populates="clips")
 
 
+class PushSubscription(SQLModel, table=True):
+    """A browser PWA push subscription (endpoint + ECDH keys)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    endpoint: str = Field(unique=True, index=True)
+    p256dh: str = ""
+    auth: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 def clip_vault_cutoff() -> datetime:
     """Clips older than 14 days from now are considered expired."""
     return datetime.now(timezone.utc) - timedelta(days=14)

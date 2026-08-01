@@ -48,6 +48,7 @@ image = (
         "httpx>=0.27.0",
         "python-dotenv>=1.0.1",
         "sentry-sdk>=2.0.0",
+        "pywebpush>=1.14.0",
     )
     .env({"MODAL": "1"})
     .add_local_dir("./app", remote_path="/root/app", copy=True)
@@ -122,10 +123,15 @@ def fastapi_app():
 
         init_db()
         cutoff = datetime.utcnow() - timedelta(hours=24)
+        # Anything not COMPLETED that's been alive >24h is stuck (pipeline max is 1h).
+        stale_statuses = [
+            JobStatus.PENDING, JobStatus.DOWNLOADING, JobStatus.TRANSCRIBING,
+            JobStatus.ANALYZING, JobStatus.RENDERING, JobStatus.FAILED,
+        ]
         with Session(engine) as session:
             old_jobs = session.exec(
                 select(Job).where(Job.created_at < cutoff).where(
-                    Job.status.in_([JobStatus.FAILED, JobStatus.PENDING])
+                    Job.status.in_(stale_statuses)
                 )
             ).all()
             for j in old_jobs:
@@ -156,6 +162,9 @@ _PIPELINE_KWARGS = dict(
         modal.Secret.from_name("trimaura-supabase-keys"),
         modal.Secret.from_name("trimaura-db-url"),
     ],
+    # 2 CPU per pipeline container: render is CPU-bound (libx264), so this
+    # roughly halves per-clip render wall-clock under back-to-back load.
+    cpu=2.0,
     scaledown_window=300,
     retries=0,
 )
@@ -190,23 +199,51 @@ def process_pipeline(job_id: int, job_data: dict | None = None):
         from app.pipeline.orchestrator import execute_pipeline
 
         # Wait for the uploaded source file to appear on the Volume (it was
-        # written by the ASGI container and may not have synced yet).
+        # written by the ASGI container and may not have synced yet). Reload
+        # each iteration with a FRESH handle — Modal volumes don't auto-
+        # propagate between containers; only a reload() sees another
+        # container's commit, and a fresh from_name() handle is required to
+        # pick up the latest volume state.
         import os, time
         if job_data and "source_url" in job_data and job_data["source_url"].startswith("/mnt/data/"):
             waited = 0
+            found = False
             for _ in range(120):  # up to ~120 seconds
+                try:
+                    modal.Volume.from_name("trimaura-data").reload()
+                except Exception as e:
+                    print(f"[pipeline] volume reload failed (non-fatal): {e}")
                 if os.path.exists(job_data["source_url"]):
                     print(f"Source file found after ~{waited}s: {job_data['source_url']}")
+                    found = True
                     break
                 time.sleep(1)
                 waited += 1
-            else:
-                print(f"Source file NOT found after {waited}s: {job_data['source_url']}")
+            if not found:
+                # Bulletproof fallback: read the file server-side from the
+                # volume API, bypassing the local mount (which may never
+                # refresh even after reload()).
+                try:
+                    rel = job_data["source_url"].replace("/mnt/data/", "", 1)
+                    data = modal.Volume.from_name("trimaura-data").read_file(rel)
+                    Path(job_data["source_url"]).parent.mkdir(parents=True, exist_ok=True)
+                    with open(job_data["source_url"], "wb") as fh:
+                        fh.write(data)
+                    print(f"[pipeline] source recovered via read_file: {job_data['source_url']} ({len(data)} bytes)")
+                except Exception as e:
+                    print(f"Source file NOT found after {waited}s: {job_data['source_url']} "
+                          f"(read_file fallback failed: {e})")
 
         asyncio.run(execute_pipeline(job_id))
         _sync_clips_to_volume(job_id)
         _write_status(job_id, "COMPLETED", 100)
     except Exception as exc:
+        # Best-effort: publish whatever clips were already rendered+committed
+        # so a mid-render failure doesn't lose the work that succeeded.
+        try:
+            _sync_clips_to_volume(job_id)
+        except Exception as sync_exc:
+            print(f"[pipeline] failed-path clip sync error (non-fatal): {sync_exc}")
         _write_status(job_id, "FAILED", 0, str(exc))
         raise
 

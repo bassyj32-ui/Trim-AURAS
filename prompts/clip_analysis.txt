@@ -9,6 +9,8 @@ Focus on:
 - Contrarian takes or surprising facts
 - Avoid repeating topics or timestamps from previously selected clips
 
+If the user provides CAMPAIGN RULES, follow them strictly when choosing segments: favor topics/keywords the campaign wants, avoid banned topics, and pick segments that match the campaign's tone and hook style.
+
 Return ONLY valid JSON array:
 [
   {"start": 12.5, "end": 55.0, "reason": "Speaker reveals surprising statistic"},

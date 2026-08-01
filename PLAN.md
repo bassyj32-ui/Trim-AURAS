@@ -1,7 +1,7 @@
 # TrimAURA — Build Plan & Roadmap
 
-> **Last updated:** 2026-07-31
-> **Status:** 🟢 V1 live on Modal — Warm cream UI, scale-to-zero, Whisper Turbo, Supabase Postgres, Frame.io GraphQL downloader, quality selector, Publish Kit (TikTok/Shorts/Reels)
+> **Last updated:** 2026-08-01
+> **Status:** 🟢 V1 live on Modal — Warm cream UI, scale-to-zero, Whisper Turbo, Supabase Postgres, Frame.io GraphQL downloader, quality selector, Publish Kit (TikTok/Shorts/Reels), FFmpeg "sight" signals, PWA + push notifications, stress-tested (3/3 back-to-back, ~6 min/job)
 > **URL:** <https://bassyj32--trimaura-fastapi-app.modal.run>
 
 ***
@@ -196,6 +196,11 @@ trimaura/
 | 7.18 | Publish kit (TikTok / Shorts / Reels)                            | ✅          | Per-clip buttons: copy platform-formatted caption (title + hashtags + optional link) + download MP4 + open upload page. Posted ✓ tracking (toggle endpoint, `posted_platforms` column). Settings has "Your Link" field. Verified live in browser |
 | 7.19 | Supabase migrations for new columns                              | ✅          | `preferred_height` on job, `posted_platforms` on videoclip — `supabase/migrations/`, applied via Supabase MCP |
 | 7.20 | PWA service-worker stale shell                                  | ✅ FIXED    | After deploys the SW serves old HTML → unregister SW + clear caches on load (verified in browser) |
+| 7.21 | FFmpeg "sight" signals                                          | ✅          | Cheap pre-analysis in `intelligence.py`: scene cuts, loud windows (PCM + RMS), black/dead-air ranges. `snap_clips_to_signals()` hard post-pass so clips land on real moments, not AI guesses |
+| 7.22 | PWA push notifications                                          | ✅          | VAPID keys, `pywebpush`, `PushSubscription` table, `POST/DELETE /api/push/subscribe` + `GET /api/push/vapid-key`, service-worker `push` handler. Notifies on COMPLETED/FAILED so you can deploy from your phone without watching the page |
+| 7.23 | Back-to-back live stress test                                   | ✅          | `_back2back_test.py` vs real Frame.io share link on live Modal: 3 simultaneous jobs, all stages clean, **3/3 COMPLETED** (836–1061s each on old settings) |
+| 7.24 | Render speed under pressure                                     | ✅          | `cpu=2.0` on both Modal pipeline functions + `-preset fast → veryfast`. Re-test on same link: **331–361s/job (2.6–3× faster)**, 3/3 COMPLETED, downloads 200 video/mp4 |
+| 7.25 | Progressive clip publishing                                     | ✅          | Per-clip DB commit + Volume commit the moment each clip renders — clips appear while still rendering and survive a mid-render failure (failed path also syncs finished clips) |
 
 ***
 

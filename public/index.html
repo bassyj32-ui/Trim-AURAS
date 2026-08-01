@@ -68,7 +68,7 @@
     <button class="icon-btn" id="downloadAllBtn" title="Download all clips">
       <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V4m0 12-4-4m4 4 4-4"/><path d="M16 20H8"/></svg>
     </button>
-    <button class="icon-btn hidden" id="pwaInstall" title="Install App">
+    <button class="icon-btn" id="pwaInstall" title="Install App / Notifications">
       <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V4m0 12-4-4m4 4 4-4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
     </button>
     <button class="icon-btn" id="settingsBtn" title="Settings">
@@ -117,10 +117,9 @@
     <div class="drawer-title" id="drawerTitle"></div>
     <div class="drawer-meta" id="drawerMeta"></div>
     <div class="drawer-actions">
-      <button class="btn-small btn-outline" id="copyTitleBtn">Copy Title</button>
-      <button class="btn-small btn-outline" id="copyHashtagsBtn">Copy Hashtags</button>
+      <button class="btn-small btn-primary" id="copyPostBtn">Copy Post Text</button>
       <button class="btn-small btn-outline" id="refreshSeoBtn">Refresh SEO</button>
-      <button class="btn-small btn-primary" id="downloadBtn">Download MP4</button>
+      <button class="btn-small btn-outline" id="downloadBtn">Download MP4</button>
     </div>
     <div style="margin-top:18px;">
       <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Publish</div>
@@ -173,6 +172,28 @@
       <button class="btn-small btn-outline" id="modalCancel" style="flex:1;">Cancel</button>
       <button class="btn-small btn-primary" id="modalConfirm" style="flex:1;">Start Generating</button>
     </div>
+  </div>
+</div>
+
+<!-- PWA Sheet (Install / Push Notifications) -->
+<div class="drawer-overlay" id="pwaOverlay"></div>
+<div class="drawer" id="pwaSheet" style="max-height:70dvh;">
+  <div class="drawer-handle"></div>
+  <div class="drawer-content" style="padding-bottom:24px;">
+    <div style="font-size:15px;font-weight:700;margin:8px 0 16px;">TrimAURA App</div>
+
+    <div id="pwaInstallSection">
+      <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:6px;letter-spacing:0.5px;">INSTALL ON YOUR PHONE</div>
+      <p id="pwaInstallText" style="font-size:13px;color:var(--ink);line-height:1.5;margin:0 0 12px;"></p>
+      <button class="btn-small btn-primary" id="pwaInstallConfirm" style="width:100%;">Install App</button>
+    </div>
+
+    <div style="height:1px;background:var(--hairline);margin:18px 0;"></div>
+
+    <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:6px;letter-spacing:0.5px;">PUSH NOTIFICATIONS</div>
+    <p style="font-size:13px;color:var(--ink);line-height:1.5;margin:0 0 12px;">Get pinged when processing is done — even when the tab is closed — so you can deploy straight from your phone.</p>
+    <button class="btn-small btn-outline" id="pwaNotifyBtn" style="width:100%;">Enable notifications</button>
+    <div id="pwaNotifyStatus" style="font-size:12px;color:var(--ink-dim);margin-top:10px;display:none;line-height:1.4;"></div>
   </div>
 </div>
 
@@ -238,8 +259,7 @@ const clipVideo = document.getElementById('clipVideo');
 const clipNav = document.getElementById('clipNav');
 const drawerTitle = document.getElementById('drawerTitle');
 const drawerMeta = document.getElementById('drawerMeta');
-const copyTitleBtn = document.getElementById('copyTitleBtn');
-const copyHashtagsBtn = document.getElementById('copyHashtagsBtn');
+const copyPostBtn = document.getElementById('copyPostBtn');
 const refreshSeoBtn = document.getElementById('refreshSeoBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
@@ -622,7 +642,7 @@ function startPolling(jobId) {
         generateMoreBtn.textContent = '＋ Generate more clips';
         resultsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--red);font-size:12px;">Generation failed: ' + (data.error || 'Unknown error') + '</div>';
         showToast('Failed: ' + (data.error || 'Unknown error'));
-        sendNotification('TrimAURA', '❌ Generation failed: ' + (data.error || 'Unknown error'));
+        if (!pushEnabled) sendNotification('TrimAURA', '❌ Generation failed: ' + (data.error || 'Unknown error'));
       }
     } catch(e) {
       // Silently retry
@@ -748,13 +768,12 @@ async function downloadSingleClip(clipId) {
 }
 
 // --- Copy ---
-copyTitleBtn.addEventListener('click', () => {
-  const text = selectedClip?.titles?.curiosity || '';
-  copyText(text, 'Title copied!');
-});
-
-copyHashtagsBtn.addEventListener('click', () => {
-  copyText(selectedClip?.hashtags || '', 'Hashtags copied!');
+copyPostBtn.addEventListener('click', () => {
+  if (!selectedClip) return;
+  const title = (selectedClip.titles && (selectedClip.titles.curiosity || selectedClip.titles.direct)) || '';
+  const tags = selectedClip.hashtags || '';
+  const text = [title, tags].filter(Boolean).join('\n\n');
+  copyText(text, 'Post text copied!');
 });
 
 async function copyText(text, msg) {
@@ -866,36 +885,150 @@ function sendNotification(title, body) {
   }
 }
 
-// Request notification permission on first interaction (passive)
-document.addEventListener('click', () => {
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
-}, { once: true });
-
-// --- PWA Install ---
+// --- PWA Install + Push Notifications ---
 let deferredPrompt = null;
+let pushEnabled = localStorage.getItem('trimauraPush') === '1';
+
 const pwaInstallBtn = document.getElementById('pwaInstall');
+const pwaOverlay = document.getElementById('pwaOverlay');
+const pwaSheet = document.getElementById('pwaSheet');
+const pwaInstallSection = document.getElementById('pwaInstallSection');
+const pwaInstallText = document.getElementById('pwaInstallText');
+const pwaInstallConfirm = document.getElementById('pwaInstallConfirm');
+const pwaNotifyBtn = document.getElementById('pwaNotifyBtn');
+const pwaNotifyStatus = document.getElementById('pwaNotifyStatus');
+
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+function openPwaSheet() {
+  pwaOverlay.classList.add('open');
+  pwaSheet.classList.add('open');
+  renderPwaSheet();
+}
+
+function closePwaSheet() {
+  pwaOverlay.classList.remove('open');
+  pwaSheet.classList.remove('open');
+}
+
+pwaOverlay.addEventListener('click', closePwaSheet);
+
+function renderPwaSheet() {
+  if (isStandalone) {
+    pwaInstallSection.style.display = 'none';
+  } else if (deferredPrompt) {
+    pwaInstallText.textContent = 'Install TrimAURA on this device for a full-screen app experience.';
+    pwaInstallConfirm.textContent = 'Install App';
+    pwaInstallConfirm.style.display = 'block';
+  } else if (isIOS) {
+    pwaInstallText.textContent = 'On iPhone/iPad: tap the Share button (square with arrow) in Safari, scroll down and tap "Add to Home Screen", then open TrimAURA from your Home Screen.';
+    pwaInstallConfirm.textContent = 'Add to Home Screen';
+    pwaInstallConfirm.style.display = 'block';
+  } else {
+    pwaInstallText.textContent = 'Use your browser\u2019s "Add to Home Screen" / "Install App" menu to install TrimAURA on this device.';
+    pwaInstallConfirm.style.display = 'none';
+  }
+
+  if (pushEnabled) {
+    pwaNotifyBtn.textContent = 'Notifications enabled ✓';
+    pwaNotifyBtn.disabled = true;
+  } else {
+    pwaNotifyBtn.textContent = 'Enable notifications';
+    pwaNotifyBtn.disabled = false;
+  }
+}
+
+pwaInstallConfirm.addEventListener('click', async () => {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    const result = await deferredPrompt.userChoice;
+    if (result.outcome === 'accepted') {
+      deferredPrompt = null;
+      closePwaSheet();
+    }
+    return;
+  }
+  if (isIOS) {
+    closePwaSheet();
+    showToast('📱 Safari → Share → Add to Home Screen');
+  }
+});
+
+pwaInstallBtn.addEventListener('click', () => {
+  if (isStandalone) { showToast('You\u2019re using the installed app 🎉'); return; }
+  if (deferredPrompt) {
+    // Android/Chrome: fire the native install prompt straight away
+    deferredPrompt.prompt();
+    deferredPrompt = null;
+    return;
+  }
+  openPwaSheet();
+});
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
-  pwaInstallBtn.classList.remove('hidden');
 });
 
-pwaInstallBtn.addEventListener('click', async () => {
-  if (!deferredPrompt) return;
-  deferredPrompt.prompt();
-  const result = await deferredPrompt.userChoice;
-  if (result.outcome === 'accepted') pwaInstallBtn.classList.add('hidden');
-  deferredPrompt = null;
-});
+// --- Push subscription ---
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = window.atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
 
-// Show iOS install hint for Safari users
-if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !window.navigator.standalone) {
+async function enablePushNotifications() {
+  if (!('Notification' in window) || !('PushManager' in window)) {
+    showToast('Push notifications aren\u2019t supported on this browser');
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    showToast('Notifications are blocked — allow them in your browser settings');
+    return;
+  }
+  if (isIOS && !isStandalone) {
+    pwaNotifyStatus.textContent = 'On iPhone, notifications work inside the installed app. Add TrimAURA to your Home Screen first (above), then open it from there and enable notifications.';
+    pwaNotifyStatus.style.display = 'block';
+    return;
+  }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { showToast('Notifications permission was denied'); return; }
+    const reg = await navigator.serviceWorker.ready;
+    const res = await fetch('/api/push/vapid-key');
+    const { public_key } = await res.json();
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(public_key)
+    });
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sub.toJSON())
+    });
+    pushEnabled = true;
+    localStorage.setItem('trimauraPush', '1');
+    pwaNotifyBtn.textContent = 'Notifications enabled ✓';
+    pwaNotifyBtn.disabled = true;
+    pwaNotifyStatus.style.display = 'none';
+    showToast('Notifications enabled — we\u2019ll ping you when jobs finish 🔔');
+  } catch (err) {
+    showToast('Could not enable push: ' + err.message);
+  }
+}
+
+pwaNotifyBtn.addEventListener('click', enablePushNotifications);
+
+// iOS hint — show once so users notice the install button
+if (isIOS && !isStandalone && !localStorage.getItem('trimauraIosHint')) {
   setTimeout(() => {
-    showToast('📱 Tap Share → Add to Home Screen');
-  }, 3000);
+    showToast('📱 Tap the download icon to install TrimAURA');
+    localStorage.setItem('trimauraIosHint', '1');
+  }, 2500);
 }
 
 // --- Init ---

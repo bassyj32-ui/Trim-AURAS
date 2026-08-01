@@ -253,6 +253,27 @@ def _ffmpeg_escape_path(p: str) -> str:
     return p.replace("\\", "/").replace(":", "\\:")
 
 
+def _has_audio_stream(video_path: str) -> bool:
+    """Return True if the source video has at least one audio stream.
+
+    Used to add a silent audio track when absent — YouTube rejects files
+    that have no audio stream at all.
+    """
+    probe = subprocess.run(
+        [
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "a",
+            "-show_entries", "stream=index",
+            "-of", "csv=p=0",
+            video_path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    return bool(probe.stdout.strip())
+
+
 # ---------------------------------------------------------------------------
 # Main render entry point
 # ---------------------------------------------------------------------------
@@ -307,13 +328,25 @@ async def execute_render(
         sub_escaped = _ffmpeg_escape_path(sub_file)
 
         # --- Build filter complex ---
+        fit_mode = slot.get("fit_mode", "cover")
 
         # 1. Main video chain (with optional Ken Burns zoom)
-        main_chain = (
-            f"[0:v]trim={trim_start}:{trim_end},setpts=PTS-STARTPTS,"
-            f"scale={sw}:{sh}:force_original_aspect_ratio=1,"
-            f"pad={sw}:{sh}:(ow-iw)/2:(oh-ih)/2"
-        )
+        if fit_mode == "cover":
+            # Full-screen 9:16 reframe: scale the source to COVER the canvas,
+            # then center-crop. Works for any source aspect — a 9:16 source
+            # fills the screen exactly, a 16:9 source is cropped to fill.
+            main_chain = (
+                f"[0:v]trim={trim_start}:{trim_end},setpts=PTS-STARTPTS,"
+                f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{height}"
+            )
+        else:
+            # Legacy "contain": centered video on a blurred background
+            main_chain = (
+                f"[0:v]trim={trim_start}:{trim_end},setpts=PTS-STARTPTS,"
+                f"scale={sw}:{sh}:force_original_aspect_ratio=1,"
+                f"pad={sw}:{sh}:(ow-iw)/2:(oh-ih)/2"
+            )
 
         kb_enabled = ken_burns.get("enabled", False)
         if kb_enabled:
@@ -327,66 +360,78 @@ async def execute_render(
                 f":d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={sw}x{sh}"
                 f",fps={fps},setpts=PTS-STARTPTS"
             )
+        else:
+            # Force a constant frame rate so YouTube always accepts the file
+            main_chain += f",fps={fps}"
 
         main_chain += "[main]"
 
-        # 2. Background blur chain
-        bg_chain = (
-            f"[0:v]trim={trim_start}:{trim_end},setpts=PTS-STARTPTS,"
-            f"scale={width}:{height}:force_original_aspect_ratio=2,"
-            f"boxblur=5:2,"
-            f"crop=trunc(iw/2)*2:trunc(ih/2)*2[bg]"
-        )
-
-        # 3. Overlay main on background
-        overlay_chain = f"[bg][main]overlay={sx}:{sy}[withvid]"
-
-        # 4. Optional PNG overlay (composited on top)
-        if overlay_path:
-            ov_escaped = _ffmpeg_escape_path(overlay_path)
-            overlay_chain += (
-                f";[1:v]format=rgba[overlay];"
-                f"[withvid][overlay]overlay=0:0[withovl]"
+        # 2. Background blur chain (contain mode only)
+        chains = [main_chain]
+        post_label = "main"
+        if fit_mode == "contain":
+            bg_chain = (
+                f"[0:v]trim={trim_start}:{trim_end},setpts=PTS-STARTPTS,"
+                f"scale={width}:{height}:force_original_aspect_ratio=2,"
+                f"boxblur=5:2,"
+                f"crop=trunc(iw/2)*2:trunc(ih/2)*2[bg]"
             )
-            post_label = "withovl"
-        else:
+            chains.append(bg_chain)
+            chains.append(f"[bg][main]overlay={sx}:{sy}[withvid]")
             post_label = "withvid"
 
-        # 5. Color grading (eq filter)
+        # 3. Optional PNG overlay (composited on top)
+        if overlay_path:
+            ov_escaped = _ffmpeg_escape_path(overlay_path)
+            chains.append(
+                f"[1:v]format=rgba[overlay];[{post_label}]overlay=0:0[withovl]"
+            )
+            post_label = "withovl"
+
+        # 4. Color grading (eq filter)
         has_cg = bool(color_grade)
         if has_cg:
             b = color_grade.get("brightness", 0.0)
             c_val = color_grade.get("contrast", 1.0)
             s_val = color_grade.get("saturation", 1.0)
             g = color_grade.get("gamma", 1.0)
-            overlay_chain += (
-                f";[{post_label}]eq="
+            chains.append(
+                f"[{post_label}]eq="
                 f"brightness={b}:contrast={c_val}:saturation={s_val}:gamma={g}[graded]"
             )
             post_label = "graded"
 
-        # 6. Subtitles on top
-        overlay_chain += f";[{post_label}]subtitles={sub_escaped}:charenc=utf-8[out]"
+        # 5. Subtitles on top
+        chains.append(f"[{post_label}]subtitles={sub_escaped}:charenc=utf-8[out]")
 
         # Assemble full filter complex
-        filter_complex = f"{main_chain};{bg_chain};{overlay_chain}"
+        filter_complex = ";".join(chains)
 
         # --- FFmpeg command ---
-        cmd = ["ffmpeg"]
+        cmd = ["ffmpeg", "-i", video_path]
+        next_input = 1
+        audio_map = "0:a?"
         if overlay_path:
-            cmd += ["-i", video_path, "-i", overlay_path]
-        else:
-            cmd += ["-i", video_path]
+            cmd += ["-i", overlay_path]
+            next_input += 1
+        # YouTube rejects files with no audio track — add a silent track if needed
+        if not _has_audio_stream(video_path):
+            cmd += ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"]
+            audio_map = f"{next_input}:a"
         cmd += [
             "-filter_complex",
             filter_complex,
             "-map", "[out]",
-            "-map", "0:a?",
+            "-map", audio_map,
             "-t", str(duration),
+            "-r", str(fps),
             "-c:v", "libx264",
-            "-preset", "fast",
+            "-profile:v", "high",
+            "-pix_fmt", "yuv420p",
+            "-preset", "veryfast",
             "-crf", "23",
             "-c:a", "aac",
+            "-movflags", "+faststart",
             "-y",
             out_path,
         ]

@@ -10,9 +10,9 @@ from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from app.config import MODAL
+from app.config import MODAL, settings
 from app.database import engine
-from app.models import Job, JobStatus, VideoClip, clip_vault_cutoff
+from app.models import Job, JobStatus, PushSubscription, VideoClip, clip_vault_cutoff
 from app.api.sse import event_stream
 from app.pipeline.orchestrator import execute_pipeline, generate_more_clips, refresh_clip_seo
 from app.storage import generate_presigned_url
@@ -72,6 +72,11 @@ class TogglePostedRequest(BaseModel):
     platform: str
 
 
+class PushSubscribeRequest(BaseModel):
+    endpoint: str
+    keys: dict = {}
+
+
 _PLATFORM_KEYS = ("tiktok", "youtube", "instagram")
 
 
@@ -110,6 +115,7 @@ async def create_job(body: CreateJobRequest):
             template_id=body.template_id,
             campaign_rules=body.campaign_rules,
             max_clips=body.max_clips,
+            preferred_height=body.preferred_height,
         )
         session.add(job)
         session.commit()
@@ -152,6 +158,15 @@ async def upload_job(
     with open(local_path, "wb") as f:
         while chunk := await file.read(1024 * 1024):  # 1MB chunks
             f.write(chunk)
+
+    # Commit the Volume so the spawned pipeline worker can see the file
+    # immediately (Modal only flushes volume writes when this container exits).
+    if MODAL:
+        try:
+            import modal as _modal
+            _modal.Volume.from_name("trimaura-data").commit()
+        except Exception as e:
+            print(f"[upload] volume commit failed (non-fatal): {e}")
 
     with Session(engine) as session:
         job = Job(
@@ -229,18 +244,13 @@ def get_job(job_id: int):
 
 @router.get("/jobs/{job_id}/poll")
 def poll_job_status(job_id: int):
-    """Lightweight polling endpoint used by the frontend on Modal.
+    """Lightweight polling endpoint used by the frontend.
 
-    Reads a JSON status file (written by the background pipeline function)
-    so the frontend doesn't hit SQLite on every poll cycle.
-    Falls back to the DB query if the file hasn't been written yet.
+    Reads job status directly from the DB (Supabase is shared between the
+    web container and pipeline workers, so it's always consistent). We
+    deliberately avoid the legacy status-file fast path — volume files can
+    be stale/absent on this container and caused flickering statuses.
     """
-    if MODAL:
-        status_path = Path("/mnt/data/status") / f"job_{job_id}.json"
-        if status_path.exists():
-            return json.loads(status_path.read_text())
-
-    # Fallback: read directly from SQLite
     with Session(engine) as session:
         job = session.get(Job, job_id)
         if not job:
@@ -434,18 +444,67 @@ async def download_clip(clip_id: int):
     return {"download_url": clip.r2_url}
 
 
+# --- Push Notifications ---
+
+@router.get("/push/vapid-key")
+def get_vapid_public_key():
+    """Public VAPID key the browser needs to subscribe for push messages."""
+    return {"public_key": settings.vapid_public_key}
+
+
+@router.post("/push/subscribe", status_code=201)
+def subscribe_push(body: PushSubscribeRequest):
+    """Save a browser push subscription so terminal job states can notify it."""
+    keys = body.keys or {}
+    with Session(engine) as session:
+        existing = session.exec(
+            select(PushSubscription).where(PushSubscription.endpoint == body.endpoint)
+        ).first()
+        if existing:
+            existing.p256dh = keys.get("p256dh", "")
+            existing.auth = keys.get("auth", "")
+            session.add(existing)
+            session.commit()
+            return {"status": "updated"}
+        sub = PushSubscription(
+            endpoint=body.endpoint,
+            p256dh=keys.get("p256dh", ""),
+            auth=keys.get("auth", ""),
+        )
+        session.add(sub)
+        session.commit()
+    return {"status": "subscribed"}
+
+
+@router.delete("/push/subscribe")
+def unsubscribe_push(body: PushSubscribeRequest):
+    with Session(engine) as session:
+        sub = session.exec(
+            select(PushSubscription).where(PushSubscription.endpoint == body.endpoint)
+        ).first()
+        if sub:
+            session.delete(sub)
+            session.commit()
+    return {"status": "unsubscribed"}
+
+
 # --- Admin / Cleanup ---
 
 @router.post("/admin/cleanup", status_code=200)
 def admin_cleanup():
-    """Delete all FAILED and old PENDING jobs. Keeps completed jobs."""
+    """Delete stale jobs stuck in any non-terminal state. Keeps completed jobs."""
     from datetime import datetime, timedelta
+    # Anything not COMPLETED that's been alive >24h is stuck (pipeline max is 1h).
+    stale_statuses = [
+        JobStatus.PENDING, JobStatus.DOWNLOADING, JobStatus.TRANSCRIBING,
+        JobStatus.ANALYZING, JobStatus.RENDERING, JobStatus.FAILED,
+    ]
     with Session(engine) as session:
         cutoff = datetime.utcnow() - timedelta(hours=24)
         jobs = session.exec(select(Job)).all()
         deleted = 0
         for j in jobs:
-            if j.status in (JobStatus.FAILED, JobStatus.PENDING) and j.created_at < cutoff:
+            if j.status in stale_statuses and j.created_at < cutoff:
                 # Soft-delete all clips too
                 for c in j.clips:
                     c.deleted = True

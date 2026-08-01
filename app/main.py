@@ -56,7 +56,7 @@ def health():
         "modal_env": os.environ.get("MODAL", "0"),
         "engine_url": url,
         "settings_url": settings_url,
-        "env_db_url": os.environ.get("DATABASE_URL", "(not set)")[:50] + "...",
+        "env_db_url_set": bool(os.environ.get("DATABASE_URL")),
     }
 
 

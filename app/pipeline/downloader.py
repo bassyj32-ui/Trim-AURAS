@@ -73,6 +73,8 @@ def _is_frameio(url: str) -> bool:
 
 def _is_direct_file(url: str) -> bool:
     """A plain link to a video/audio file we can stream straight down."""
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return False
     path = re.split(r"[?#]", url)[0].lower()
     return path.endswith(tuple(_VIDEO_EXTS)) or path.endswith((".m4a", ".mp3", ".wav"))
 

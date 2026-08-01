@@ -1,4 +1,4 @@
-const CACHE = "trimaura-v1";
+const CACHE = "trimaura-v2";
 const STATIC_ASSETS = [
   "/",
   "/manifest.json",
@@ -15,7 +15,29 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(clients.claim());
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+    ).then(() => clients.claim())
+  );
+});
+
+// Handle push messages — show a notification for the finished job
+self.addEventListener("push", (event) => {
+  let payload = { title: "TrimAURA", body: "Your job finished." };
+  try {
+    if (event.data) payload = event.data.json();
+  } catch (e) {
+    /* non-JSON payload — keep defaults */
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title || "TrimAURA", {
+      body: payload.body || "",
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      data: payload.data || {},
+    })
+  );
 });
 
 // Handle notification click — focus or open the app
