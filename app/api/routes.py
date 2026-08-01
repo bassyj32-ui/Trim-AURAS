@@ -222,6 +222,7 @@ def get_job(job_id: int):
                 },
                 "description": c.description,
                 "hashtags": c.hashtags,
+                "viral_score": c.viral_score,
                 "posted_platforms": _clip_posted(c),
                 "created_at": c.created_at.isoformat(),
             }
@@ -350,6 +351,7 @@ def list_clips():
                 },
                 "description": c.description,
                 "hashtags": c.hashtags,
+                "viral_score": c.viral_score,
                 "posted_platforms": _clip_posted(c),
                 "created_at": c.created_at.isoformat(),
             }

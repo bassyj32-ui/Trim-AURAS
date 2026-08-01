@@ -50,6 +50,7 @@ class VideoClip(SQLModel, table=True):
     title_question: str = ""
     description: str = ""
     hashtags: str = ""
+    viral_score: Optional[int] = None              # 0-100 viral prediction from DeepSeek
     posted_platforms: Optional[str] = Field(default="[]")  # JSON list: ["tiktok","youtube","instagram"]
 
     deleted: bool = Field(default=False)          # Soft delete

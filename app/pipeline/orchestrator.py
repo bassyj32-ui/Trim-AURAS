@@ -21,13 +21,14 @@ SOURCE_CACHE_DIR = Path("/mnt/data/sources")
 CLIPS_DIR = Path("/mnt/data/clips")
 
 
-def _volume_commit():
-    """Force a Modal Volume commit so the web container can serve a clip as
-    soon as it's written (progressive publishing), not only at job end."""
+async def _volume_commit():
+    """Commit the Modal Volume so the web container can serve a clip as soon
+    as it's written (progressive publishing). Uses the async .aio() interface
+    so the commit does not block the pipeline event loop."""
     try:
         import modal
 
-        modal.Volume.from_name("trimaura-data").commit()
+        await modal.Volume.from_name("trimaura-data").commit.aio()
     except Exception as e:
         print(f"[volume] commit failed (non-fatal): {e}")
 
@@ -247,6 +248,7 @@ async def execute_pipeline(job_id: int):
                     title_question=seo_data.get("title_question", ""),
                     description=seo_data.get("description", ""),
                     hashtags=seo_data.get("hashtags", ""),
+                    viral_score=clip_info.get("score"),
                 )
                 session.add(db_clip)
                 session.flush()  # get db_clip.id before commit
@@ -262,7 +264,7 @@ async def execute_pipeline(job_id: int):
                 # and survives a mid-render failure instead of being rolled
                 # back with the whole job.
                 session.commit()
-                _volume_commit()
+                await _volume_commit()
 
             db_job.status = JobStatus.COMPLETED
             db_job.progress_percentage = 100
@@ -385,6 +387,7 @@ async def generate_more_clips(job_id: int, count: int = 3):
                     title_question=seo_data.get("title_question", ""),
                     description=seo_data.get("description", ""),
                     hashtags=seo_data.get("hashtags", ""),
+                    viral_score=clip_info.get("score"),
                 )
                 session.add(db_clip)
                 session.flush()  # get db_clip.id before commit
@@ -396,7 +399,7 @@ async def generate_more_clips(job_id: int, count: int = 3):
                 db_clip.r2_url = str(clip_serve_path)
 
                 session.commit()
-                _volume_commit()
+                await _volume_commit()
 
         _update_job(job_id, status=JobStatus.COMPLETED, progress_percentage=100)
 

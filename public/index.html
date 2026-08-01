@@ -385,7 +385,8 @@ function renderResults(jobId) {
   fetch(`/api/jobs/${jobId}`)
     .then(r => r.json())
     .then(job => {
-      const clips = job.clips || [];
+      // Best-first: viral score desc, un-scored clips last
+      const clips = [...(job.clips || [])].sort((a, b) => (b.viral_score ?? -1) - (a.viral_score ?? -1));
       generateMoreBtn.classList.toggle('hidden', job.status !== 'COMPLETED');
       if (clips.length === 0) {
         resultsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--ink-dim);font-size:12px;">No clips generated</div>';
@@ -393,11 +394,13 @@ function renderResults(jobId) {
         return;
       }
       resultsCount.textContent = clips.length + ' clip' + (clips.length !== 1 ? 's' : '');
-      resultsList.innerHTML = clips.map((c,i) =>
-        `<div class="result-row" data-clip-id="${c.clip_id}" data-job-id="${jobId}">
+      resultsList.innerHTML = clips.map((c,i) => {
+        const score = c.viral_score;
+        const scoreColor = score == null ? '' : (score >= 80 ? 'var(--accent-ok,#2e9e5b)' : score >= 60 ? 'var(--accent-warn,#d99a2b)' : 'var(--ink-dim)');
+        return `<div class="result-row" data-clip-id="${c.clip_id}" data-job-id="${jobId}">
           <div class="result-score">
-            <div class="result-score-num">${i+1}</div>
-            <div class="result-score-label">Clip</div>
+            <div class="result-score-num" style="${score != null ? 'color:' + scoreColor : ''}">${score != null ? score : (i+1)}</div>
+            <div class="result-score-label">${score != null ? 'Score' : 'Clip'}</div>
           </div>
           <div class="result-thumb" style="background-image:url('${templatePreviews[job.template_id]||''}');background:${templateGradients[job.template_id]||'linear-gradient(155deg,#E7B5A0,#C97B57)'}">
             <svg class="icon result-play" width="13" height="13" viewBox="0 0 24 24" style="stroke:#fff"><path d="M8 5l11 7-11 7Z"/></svg>
@@ -412,8 +415,8 @@ function renderResults(jobId) {
           <button class="result-action" data-clip-id="${c.clip_id}" title="Download">
             <svg class="icon" width="12" height="12" viewBox="0 0 24 24" style="stroke:#fff"><path d="M12 16V4m0 12-4-4m4 4 4-4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
           </button>
-        </div>`
-      ).join('');
+        </div>`;
+      }).join('');
 
       // Click card → open drawer
       resultsList.querySelectorAll('.result-row').forEach(el => {
@@ -703,7 +706,7 @@ function showClip(clip) {
   clipVideo.src = `/api/clips/${clip.clip_id}/download`;
   clipVideo.load();
   drawerTitle.textContent = clip.titles?.curiosity || clip.description || 'Clip ' + clip.clip_id;
-  drawerMeta.textContent = (clip.duration || '0') + 's' + (clip.hashtags ? ' · ' + clip.hashtags : '');
+  drawerMeta.textContent = (clip.viral_score != null ? 'Score ' + clip.viral_score + '/100 · ' : '') + (clip.duration || '0') + 's' + (clip.hashtags ? ' · ' + clip.hashtags : '');
   downloadBtn.onclick = () => downloadSingleClip(clip.clip_id);
   renderPublishPanel();
 }
@@ -730,7 +733,7 @@ refreshSeoBtn.addEventListener('click', async () => {
     selectedClip.description = data.description;
     selectedClip.hashtags = data.hashtags;
     drawerTitle.textContent = data.titles?.curiosity || 'Clip ' + clipId;
-    drawerMeta.textContent = (selectedClip.duration || '0') + 's' + (data.hashtags ? ' · ' + data.hashtags : '');
+    drawerMeta.textContent = (selectedClip.viral_score != null ? 'Score ' + selectedClip.viral_score + '/100 · ' : '') + (selectedClip.duration || '0') + 's' + (data.hashtags ? ' · ' + data.hashtags : '');
     showToast('SEO refreshed!');
   } catch {
     showToast('Refresh failed');

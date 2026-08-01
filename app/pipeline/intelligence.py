@@ -78,6 +78,24 @@ async def execute_analyze(
     raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     clips = json.loads(raw)
 
+    # Normalize "score" (0-100) so downstream code always sees a clean int or
+    # None, then rank best-first so the frontend can trust clip order.
+    for c in clips:
+        score = c.get("score")
+        if score is None:
+            c["score"] = None
+        else:
+            try:
+                score = int(round(float(score)))
+            except (TypeError, ValueError):
+                c["score"] = None
+            else:
+                c["score"] = max(0, min(100, score))
+    clips.sort(
+        key=lambda c: c["score"] if c["score"] is not None else -1,
+        reverse=True,
+    )
+
     return clips
 
 

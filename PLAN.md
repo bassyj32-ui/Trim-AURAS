@@ -201,6 +201,22 @@ trimaura/
 | 7.23 | Back-to-back live stress test                                   | ✅          | `_back2back_test.py` vs real Frame.io share link on live Modal: 3 simultaneous jobs, all stages clean, **3/3 COMPLETED** (836–1061s each on old settings) |
 | 7.24 | Render speed under pressure                                     | ✅          | `cpu=2.0` on both Modal pipeline functions + `-preset fast → veryfast`. Re-test on same link: **331–361s/job (2.6–3× faster)**, 3/3 COMPLETED, downloads 200 video/mp4 |
 | 7.25 | Progressive clip publishing                                     | ✅          | Per-clip DB commit + Volume commit the moment each clip renders — clips appear while still rendering and survive a mid-render failure (failed path also syncs finished clips) |
+| 7.26 | Viral score (0-100) + best-first sort                            | ✅          | DeepSeek returns a `score` per clip (scoring guide in `clip_analysis.txt`); `intelligence.py` normalizes & sorts best-first; stored in `videoclip.viral_score` (Supabase migration applied); frontend shows colored score badge + sorts clips so you always post the strongest one first |
+
+***
+
+## 🎯 Future Polish Backlog (saved for later — not needed for V1)
+
+Ranked by ROI for the current solo/gaming workflow. Not scheduled.
+
+| # | Upgrade | Difficulty | Value | Notes |
+|---|---------|-----------|-------|-------|
+| 1 | **Karaoke / word-level animated captions** | 🟡 Medium | High (retention) | Word timestamps from Whisper (`timestamp_granularities=["word"]` in `transcriber.py`), new ASS builder in `video_editor.py` using `\k`/`\kf` tags, template `highlight_color` config. Fiddly timing-sync testing needed. |
+| 2 | **Silence / filler-word trimming** | 🟡 Medium | Medium | Cut pauses >0.5s (safer than removing "um/uh" — that needs audio+video+caption cuts at the same boundaries, prone to drift). |
+| 3 | **Face-aware crop (speaker tracking)** | 🔴 Hard | Low for gaming | OpenCV/MediaPipe face detection + smoothed crop trajectory + animated FFmpeg crop. Fragile on fast-cut, HUD-heavy gaming footage. Only pays off if pivoting to podcast/talking-head content. |
+| — | ~~Music overlay~~ | ~~Easy~~ | — | **Explicitly not wanted** by the user — skip. |
+
+> All other Opus-clip features (B-roll, dubbing, speech enhancement, direct auto-post, scheduler) are intentionally out of scope for the solo tool.
 
 ***
 

@@ -1,0 +1,1 @@
+ALTER TABLE videoclip ADD COLUMN IF NOT EXISTS viral_score integer DEFAULT NULL;
