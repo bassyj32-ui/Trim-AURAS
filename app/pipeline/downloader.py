@@ -83,7 +83,7 @@ def _is_local_path(value: str) -> bool:
 def _get_ydl_opts(output_path: str, preferred_height: int = 1080) -> dict:
     """Return yt-dlp options that try several clients to bypass bot checks."""
     fmt = f"best[height<={preferred_height}]/best" if preferred_height > 0 else "best"
-    return {
+    opts = {
         "outtmpl": output_path,
         "format": fmt,
         "quiet": True,
@@ -103,6 +103,15 @@ def _get_ydl_opts(output_path: str, preferred_height: int = 1080) -> dict:
             "Chrome/120.0.0.0 Safari/537.36"
         ),
     }
+    # TLS impersonation (Chrome fingerprint via curl_cffi) helps against
+    # YouTube's anti-bot; silently skipped when curl_cffi isn't installed.
+    try:
+        import curl_cffi  # noqa: F401
+
+        opts["impersonate"] = "chrome"
+    except ImportError:
+        pass
+    return opts
 
 
 def execute_download(source: str, cookies_file: str | None = None, preferred_height: int = 1080) -> str:

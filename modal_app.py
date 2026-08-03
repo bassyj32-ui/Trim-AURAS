@@ -32,7 +32,13 @@ data_volume = modal.Volume.from_name("trimaura-data", create_if_missing=True)
 # ---------------------------------------------------------------------------
 image = (
     modal.Image.debian_slim(python_version="3.13")
-    .apt_install("ffmpeg")
+    .apt_install("ffmpeg", "curl", "unzip", "ca-certificates")
+    # yt-dlp 2026+ requires a JS runtime for YouTube extraction; deno is the
+    # only runtime enabled by default and is auto-detected from PATH.
+    .run_commands(
+        "curl -fsSL -o /usr/local/bin/deno.zip https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip",
+        "unzip -o /usr/local/bin/deno.zip -d /usr/local/bin/ && rm -f /usr/local/bin/deno.zip",
+    )
     .pip_install(
         "fastapi>=0.115.0",
         "uvicorn[standard]>=0.30.0",
@@ -41,6 +47,7 @@ image = (
         "groq>=0.9.0",
         "openai>=1.0.0",
         "yt-dlp>=2024.12.0",
+        "curl_cffi>=0.9.0",
         "psycopg2-binary>=2.9.0",
         "python-multipart>=0.0.12",
         "pydantic-settings>=2.4.0",
