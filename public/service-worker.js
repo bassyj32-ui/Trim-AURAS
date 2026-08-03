@@ -1,4 +1,4 @@
-const CACHE = "trimaura-v3";
+const CACHE = "trimaura-v4";
 const STATIC_ASSETS = [
   "/",
   "/manifest.json",
