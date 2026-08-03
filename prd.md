@@ -84,9 +84,9 @@ trimaura/
 │   │
 │   └── pipeline/
 │       ├── orchestrator.py      # Modal worker execution controller
-│       ├── downloader.py       # GDrive (yt-dlp), Frame.io GraphQL, local uploads (YouTube disabled)
+│       ├── downloader.py       # Any http(s) link via yt-dlp (YouTube, TikTok, Instagram, GDrive), Frame.io GraphQL, local uploads
 │       ├── transcriber.py      # Phase 2: Groq Whisper V3 Turbo (with Tenacity retry)
-│       ├── intelligence.py     # Phase 3: DeepSeek viral moment extractor & titles
+│       ├── intelligence.py     # Phase 3: DeepSeek viral moment extractor & titles + content-aware routing (speech/action/music)
 │       ├── video_editor.py     # Phase 4: FFmpeg template applier & renderer
 │       └── seo_generator.py    # Phase 5: DeepSeek SEO title & hashtag builder
 │
@@ -296,7 +296,7 @@ Initializes a video rendering job from a source URL.
 | `template_id`      | str  | `"blurpad_v1"`   | Template used for rendering                                        |
 | `campaign_rules`   | str  | `""`             | SEO campaign instructions for the clip analyzer                    |
 | `max_clips`        | int  | `5`              | Maximum clips to generate                                          |
-| `preferred_height` | int  | `720`            | Frame.io proxy height; `0` = original full file (360/540/720/1080) |
+| `preferred_height` | int  | `1080`           | Caps download/Frame.io proxy height; `0` = original full file (360/540/720/1080) |
 
 - **Response** **`202 Accepted`:**
 

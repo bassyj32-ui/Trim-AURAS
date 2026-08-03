@@ -1,7 +1,7 @@
 # TrimAURA — Build Plan & Roadmap
 
-> **Last updated:** 2026-08-01
-> **Status:** 🟢 V1 live on Modal — Warm cream UI, scale-to-zero, Whisper Turbo, Supabase Postgres, Frame.io GraphQL downloader, quality selector, Publish Kit (TikTok/Shorts/Reels), FFmpeg "sight" signals, PWA + push notifications, stress-tested (3/3 back-to-back, ~6 min/job)
+> **Last updated:** 2026-08-03
+> **Status:** 🟢 V1 live on Modal — Warm cream UI, scale-to-zero, Whisper Turbo, Supabase Postgres, Frame.io GraphQL downloader, quality selector (1080p default), Publish Kit (TikTok/Shorts/Reels), FFmpeg "sight" signals, content-aware clip selection (speech/action/music), any-source downloads via yt-dlp (YouTube, TikTok, Instagram, Google Drive), clean clips (no burned text), PWA + push notifications, stress-tested (3/3 back-to-back, ~6 min/job)
 > **URL:** <https://bassyj32--trimaura-fastapi-app.modal.run>
 
 ***
@@ -24,9 +24,9 @@ trimaura/
 │   │
 │   └── pipeline/
 │       ├── orchestrator.py      # Pipeline controller with clip vault features
-│       ├── downloader.py        # Phase 1: GDrive (yt-dlp) + Frame.io GraphQL + local uploads (YouTube disabled)
+│       ├── downloader.py        # Phase 1: any http(s) link via yt-dlp (YouTube, TikTok, Instagram, GDrive) + Frame.io GraphQL + local uploads
 │       ├── transcriber.py      # Phase 2: Groq Whisper V3 Turbo (with Tenacity retry)
-│       ├── intelligence.py     # Phase 3: DeepSeek viral moment extractor & titles
+│       ├── intelligence.py     # Phase 3: DeepSeek viral moment extractor + FFmpeg "sight" signals + content-aware routing (speech/action/music)
 │       ├── video_editor.py     # Phase 4: FFmpeg template applier & renderer
 │       └── seo_generator.py    # Phase 5: DeepSeek SEO title & hashtag builder
 │
@@ -83,7 +83,7 @@ trimaura/
 
 | Step | File                            | What                                                                     | Status |
 | ---- | ------------------------------- | ------------------------------------------------------------------------ | ------ |
-| 2.1  | `app/pipeline/downloader.py`    | GDrive (yt-dlp) + Frame.io GraphQL share API + direct video links / local uploads   | ✅      |
+| 2.1  | `app/pipeline/downloader.py`    | Any http(s) link via yt-dlp (YouTube, TikTok, Instagram, GDrive) + Frame.io GraphQL share API + direct video links / local uploads | ✅      |
 | 2.2  | `app/pipeline/transcriber.py`   | Groq Whisper V3 Turbo with tenacity retry (was V3, cheaper)              | ✅      |
 | 2.3  | `app/pipeline/intelligence.py`  | DeepSeek viral moment analysis                                           | ✅      |
 | 2.4  | `app/pipeline/video_editor.py`  | FFmpeg render with ASS subtitles                                         | ✅      |
@@ -186,13 +186,13 @@ trimaura/
 | 7.8  | iOS PWA support (apple-touch-icon, meta tags)                   | ✅          | Can add to iOS home screen                                      |
 | 7.9  | Touch-optimized UI (tap targets, scroll snap)                   | ✅          | 44px min touch targets, smooth scroll                           |
 | 7.10 | End-to-end test with real GDrive video                          | ✅          | Tested with Google Drive URL — pipeline completed, 3 clips      |
-| 7.11 | YouTube disabled for V1 (GDrive + Frame.io + uploads)           | ✅          | 3-layer guard: frontend, API validation, downloader check       |
+| 7.11 | YouTube disabled for V1 (GDrive + Frame.io + uploads)           | ✅ → ⚡ | Originally a 3-layer guard (frontend, API validation, downloader check). **Superseded by 7.28 — YouTube + all platforms now enabled** |
 | 7.12 | boxblur=20:5 → 5:2 for faster rendering                         | ✅          | \~3-4x faster blurpad rendering on CPU                          |
 | 7.13 | Fixed missing `Path` import in orchestrator                     | ✅          | Pipeline was crashing at RENDERING stage                        |
 | 7.14 | Database migrated from SQLite → Supabase (PostgreSQL)           | ✅          | `database.py` uses Supabase pooler on Modal, local dev fallback |
 | 7.15 | Mobile testing from phone                                       | ✅          | Verified on real phone (PWA blank screen fixed via `.frame-wrapper` CSS). Live end-to-end: GDrive + Frame.io jobs → 3 clips each |
 | 7.16 | Cloudflare R2 SSL incident                                      | 🐌 BLOCKED | Incident `py46dmbg0t0t`, using Modal Volume fallback            |
-| 7.17 | Frame.io share links supported                                  | ✅          | GraphQL share API (`base64(share_id)` header). PWA quality selector: 360p/540p/720p/1080p/Original (default 720p). Verified live: 540p → 35.7MB (960x506), 720p → 51MB; job 32 COMPLETED |
+| 7.17 | Frame.io share links supported                                  | ✅          | GraphQL share API (`base64(share_id)` header). PWA quality selector: 360p/540p/720p/1080p/Original (**default 1080p** since 7.29). Verified live: 540p → 35.7MB (960x506), 720p → 51MB; job 32 COMPLETED |
 | 7.18 | Publish kit (TikTok / Shorts / Reels)                            | ✅          | Per-clip buttons: copy platform-formatted caption (title + hashtags + optional link) + download MP4 + open upload page. Posted ✓ tracking (toggle endpoint, `posted_platforms` column). Settings has "Your Link" field. Verified live in browser |
 | 7.19 | Supabase migrations for new columns                              | ✅          | `preferred_height` on job, `posted_platforms` on videoclip — `supabase/migrations/`, applied via Supabase MCP |
 | 7.20 | PWA service-worker stale shell                                  | ✅ FIXED    | After deploys the SW serves old HTML → unregister SW + clear caches on load (verified in browser) |
@@ -202,6 +202,16 @@ trimaura/
 | 7.24 | Render speed under pressure                                     | ✅          | `cpu=2.0` on both Modal pipeline functions + `-preset fast → veryfast`. Re-test on same link: **331–361s/job (2.6–3× faster)**, 3/3 COMPLETED, downloads 200 video/mp4 |
 | 7.25 | Progressive clip publishing                                     | ✅          | Per-clip DB commit + Volume commit the moment each clip renders — clips appear while still rendering and survive a mid-render failure (failed path also syncs finished clips) |
 | 7.26 | Viral score (0-100) + best-first sort                            | ✅          | DeepSeek returns a `score` per clip (scoring guide in `clip_analysis.txt`); `intelligence.py` normalizes & sorts best-first; stored in `videoclip.viral_score` (Supabase migration applied); frontend shows colored score badge + sorts clips so you always post the strongest one first |
+| 7.27 | Clean video (no on-screen text)                                  | ✅          | Default renders burn NO text: subtitles + template overlay PNGs disabled (`burn_text=False` in `video_editor.execute_render`). Clips come out clean — the user adds their own text later. `burn_text=True` escape hatch kept for the future |
+| 7.28 | Any-source downloads (YouTube + all yt-dlp platforms)            | ✅          | Removed the 3-layer YouTube block (frontend host check, API whitelist, downloader guard). Any http(s) link now goes through yt-dlp: YouTube, TikTok, Instagram, Twitter/X, Vimeo, Google Drive, etc. Fixed YouTube bot-check: `player_client=["default"]` (old `tv#embed` was blocked) + updated yt-dlp. Verified end-to-end download locally. ⚠️ Some TikTok/Instagram videos are login-walled → need cookies (backlog #4) |
+| 7.29 | 1080p default download quality                                   | ✅          | `preferred_height` default 720 → **1080** everywhere (routes, orchestrator fallbacks, `execute_download` default, PWA selector default 1080p). yt-dlp format cap: `best[height<=1080]/best`. Original (0) still available per job |
+| 7.30 | Content-aware clip selection (speech/action/music)               | ✅          | `classify_content()`: transcript-coverage ratio + scene-cut density → type. Speech content uses DeepSeek transcript selection (unchanged); no-speech content (music video, gameplay w/o commentary, visual B-roll) now uses `select_signal_clips()`: loudness windows → longest scene chunks → even spacing. Removed the hard "No speech detected" job failure. SEO falls back to video title when transcript is empty. Verified: unit tests + real silent video produced 3 non-overlapping clips |
+
+**Known limitations (V1):**
+- TikTok/Instagram downloads may fail on login-walled videos — cookie support is backlog #4
+- Music/visual clips get generic SEO (title-only) since there's no transcript to mine
+- `select_signal_clips` is deterministic — "Generate more" may return nothing new once energy windows are exhausted
+- YouTube's bot check is partly IP-based; on Modal's cloud IPs it may be stricter than local
 
 ***
 
@@ -214,6 +224,7 @@ Ranked by ROI for the current solo/gaming workflow. Not scheduled.
 | 1 | **Karaoke / word-level animated captions** | 🟡 Medium | High (retention) | Word timestamps from Whisper (`timestamp_granularities=["word"]` in `transcriber.py`), new ASS builder in `video_editor.py` using `\k`/`\kf` tags, template `highlight_color` config. Fiddly timing-sync testing needed. |
 | 2 | **Silence / filler-word trimming** | 🟡 Medium | Medium | Cut pauses >0.5s (safer than removing "um/uh" — that needs audio+video+caption cuts at the same boundaries, prone to drift). |
 | 3 | **Face-aware crop (speaker tracking)** | 🔴 Hard | Low for gaming | OpenCV/MediaPipe face detection + smoothed crop trajectory + animated FFmpeg crop. Fragile on fast-cut, HUD-heavy gaming footage. Only pays off if pivoting to podcast/talking-head content. |
+| 4 | **Cookies file support (TikTok/Instagram/login-walled videos)** | 🟢 Easy | Medium | Optional `cookiefile` upload in the PWA, passed to yt-dlp (`opts["cookiefile"]` — plumbing already exists in `downloader.execute_download`). Unlocks login-walled YouTube/TikTok/Instagram posts; needed when the YouTube bot-check gets stricter on cloud IPs. |
 | — | ~~Music overlay~~ | ~~Easy~~ | — | **Explicitly not wanted** by the user — skip. |
 
 > All other Opus-clip features (B-roll, dubbing, speech enhancement, direct auto-post, scheduler) are intentionally out of scope for the solo tool.

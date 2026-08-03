@@ -8,8 +8,10 @@ from app.models import Job, JobStatus, VideoClip
 from app.pipeline.downloader import execute_download
 from app.pipeline.transcriber import execute_transcribe
 from app.pipeline.intelligence import (
+    classify_content,
     execute_analyze,
     extract_video_signals,
+    select_signal_clips,
     snap_clips_to_signals,
 )
 from app.pipeline.video_editor import execute_render
@@ -150,7 +152,7 @@ async def _resolve_source(job_id: int, job) -> str:
         path = await asyncio.to_thread(
             execute_download,
             job.source_url,
-            preferred_height=job.preferred_height if job.preferred_height is not None else 720,
+            preferred_height=job.preferred_height if job.preferred_height is not None else 1080,
         )
         _cache_source(job_id, path)
         return path
@@ -174,7 +176,7 @@ async def execute_pipeline(job_id: int):
         video_path = await asyncio.to_thread(
             execute_download,
             job.source_url,
-            preferred_height=job.preferred_height if job.preferred_height is not None else 720,
+            preferred_height=job.preferred_height if job.preferred_height is not None else 1080,
         )
 
         # Upload source video to R2 for re-generation (non-fatal)
@@ -191,31 +193,44 @@ async def execute_pipeline(job_id: int):
         _update_job(job_id, status=JobStatus.TRANSCRIBING, progress_percentage=25)
         segments = await execute_transcribe(video_path)
 
-        # Guard: a video with no usable speech can't produce clips. Fail with
-        # a clear message instead of a confusing downstream error.
-        if not segments or len(_get_transcript_text(segments).strip()) < 10:
-            raise RuntimeError(
-                "No speech detected in this video (transcript is empty). "
-                "Please use a video with clear spoken audio."
-            )
-
-        # Save full transcript to job for later re-generation
+        # Save full transcript to job for later re-generation (may be empty
+        # for music/visual content — routed below).
         _update_job(job_id, transcript_json=json.dumps(segments))
 
-        # --- Phase 3: Analyze ---
+        # --- Phase 3: Analyze (content-aware) ---
         _update_job(job_id, status=JobStatus.ANALYZING, progress_percentage=40)
         # Cheap FFmpeg "sight" probes: scene cuts, loud moments, dead air
         video_signals = await asyncio.to_thread(extract_video_signals, video_path)
-        clips = await execute_analyze(
-            segments,
-            max_clips=job.max_clips,
-            campaign_rules=job.campaign_rules or "",
-            video_signals=video_signals,
-        )
+
+        has_speech = len(_get_transcript_text(segments).strip()) >= 10
+        if has_speech:
+            # Transcript-driven selection (podcasts, talking heads, commentary)
+            clips = await execute_analyze(
+                segments,
+                max_clips=job.max_clips,
+                campaign_rules=job.campaign_rules or "",
+                video_signals=video_signals,
+            )
+        else:
+            # No usable speech (music video, gameplay without commentary,
+            # visual B-roll): route to signal-based selection instead of
+            # failing the job.
+            content_type = classify_content(segments, video_signals)
+            clips = select_signal_clips(
+                max_clips=job.max_clips,
+                video_signals=video_signals,
+            )
+            print(
+                f"[pipeline] no speech detected; content_type={content_type}; "
+                f"selected {len(clips)} clips from signals"
+            )
         clips = snap_clips_to_signals(clips, video_signals)
 
         if not clips:
-            raise RuntimeError("DeepSeek returned no clip suggestions")
+            raise RuntimeError(
+                "Couldn't pick any watchable clips from this video. "
+                "Use a video with clear speech or a strong energy curve."
+            )
 
         # --- Phase 4: Render ---
         _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
@@ -223,6 +238,9 @@ async def execute_pipeline(job_id: int):
 
         # --- Phase 5: SEO & Upload (per clip) ---
         transcript_text = _get_transcript_text(segments)
+        if len(transcript_text.strip()) < 10:
+            # No speech to base SEO on (music/visual clip) — use the job title
+            transcript_text = f"[Video title] {job.title or 'Untitled'}"
         seo_data = await execute_seo(transcript_text, campaign_rules=job.campaign_rules or "")
 
         CLIPS_DIR.mkdir(parents=True, exist_ok=True)
@@ -324,30 +342,38 @@ async def generate_more_clips(job_id: int, count: int = 3):
 
         # Analyze with existing clips as exclusions
         max_to_generate = min(count, job.max_clips)
-        clips = await execute_analyze(
-            segments,
-            max_clips=max_to_generate,
-            existing_clips=existing_clips,
-            campaign_rules=job.campaign_rules or "",
-            video_signals=video_signals,
-        )
-        if not clips:
-            # DeepSeek refused to suggest anything new (existing clips cover
-            # the highlights). Retry once without exclusions so "generate
-            # more" can still produce additional crops of the same video.
-            print(
-                "[generate-more] no new suggestions with exclusions; "
-                "retrying without exclusions"
-            )
+        has_speech = len(_get_transcript_text(segments).strip()) >= 10
+        if has_speech:
             clips = await execute_analyze(
                 segments,
                 max_clips=max_to_generate,
+                existing_clips=existing_clips,
                 campaign_rules=job.campaign_rules or "",
                 video_signals=video_signals,
             )
+            if not clips:
+                # DeepSeek refused to suggest anything new (existing clips cover
+                # the highlights). Retry once without exclusions so "generate
+                # more" can still produce additional crops of the same video.
+                print(
+                    "[generate-more] no new suggestions with exclusions; "
+                    "retrying without exclusions"
+                )
+                clips = await execute_analyze(
+                    segments,
+                    max_clips=max_to_generate,
+                    campaign_rules=job.campaign_rules or "",
+                    video_signals=video_signals,
+                )
+        else:
+            clips = select_signal_clips(
+                max_clips=max_to_generate,
+                video_signals=video_signals,
+                existing_clips=existing_clips,
+            )
 
         if not clips:
-            raise RuntimeError("DeepSeek returned no clip suggestions")
+            raise RuntimeError("Couldn't pick any watchable clips from this video")
 
         clips = snap_clips_to_signals(clips, video_signals)
 
@@ -368,6 +394,9 @@ async def generate_more_clips(job_id: int, count: int = 3):
 
                 # Generate SEO per clip transcript snippet
                 clip_transcript = _get_clip_transcript_text(segments, clip_info["start"], clip_info["end"])
+                if len(clip_transcript.strip()) < 10:
+                    # No speech in this clip (music/visual) — use the job title
+                    clip_transcript = f"[Video title] {job.title or 'Untitled'}"
                 seo_data = await execute_seo(clip_transcript, campaign_rules=job.campaign_rules or "")
 
                 clip_idx = len([c for c in db_job.clips if not c.deleted]) + i

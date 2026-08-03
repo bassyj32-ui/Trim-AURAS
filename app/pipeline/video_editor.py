@@ -283,14 +283,20 @@ async def execute_render(
     clips: list[dict[str, Any]],
     segments: list[dict[str, Any]],
     template_id: str,
+    burn_text: bool = False,
 ) -> list[str]:
     """Render each clip from source video using the template.
 
-    Supports:
-      - ASS subtitle overlay with emoji injection
+    When burn_text=False (the default) NO subtitles or overlay graphics are
+    burned onto the video — the clip is clean footage and any on-screen text
+    is added by the user afterwards. When burn_text=True the template's ASS
+    subtitles and PNG overlay are applied.
+
+    Template features:
       - Ken Burns subtle zoom on the main video slot
       - Color grading (brightness, contrast, saturation, gamma)
-      - Optional PNG overlay image per template
+      - Optional PNG overlay image per template (burn_text only)
+      - ASS subtitle overlay with emoji injection (burn_text only)
     """
     RENDER_DIR.mkdir(parents=True, exist_ok=True)
     template = _load_template(template_id)
@@ -314,9 +320,11 @@ async def execute_render(
 
     for i, clip in enumerate(clips):
         out_path = str(RENDER_DIR / f"clip_{i}.mp4")
-        sub_file = _build_subtitle_file(
-            segments, clip["start"], clip["end"], sub_style, f"subs_{i}"
-        )
+        sub_file = None
+        if burn_text:
+            sub_file = _build_subtitle_file(
+                segments, clip["start"], clip["end"], sub_style, f"subs_{i}"
+            )
 
         width, height = canvas["width"], canvas["height"]
         sw, sh = slot["width"], slot["height"]
@@ -325,7 +333,7 @@ async def execute_render(
         trim_end = clip["end"]
         duration = trim_end - trim_start
 
-        sub_escaped = _ffmpeg_escape_path(sub_file)
+        sub_escaped = _ffmpeg_escape_path(sub_file) if sub_file else None
 
         # --- Build filter complex ---
         fit_mode = slot.get("fit_mode", "cover")
@@ -380,8 +388,8 @@ async def execute_render(
             chains.append(f"[bg][main]overlay={sx}:{sy}[withvid]")
             post_label = "withvid"
 
-        # 3. Optional PNG overlay (composited on top)
-        if overlay_path:
+        # 3. Optional PNG overlay (composited on top) — template branding/text
+        if burn_text and overlay_path:
             ov_escaped = _ffmpeg_escape_path(overlay_path)
             chains.append(
                 f"[1:v]format=rgba[overlay];[{post_label}]overlay=0:0[withovl]"
@@ -401,8 +409,11 @@ async def execute_render(
             )
             post_label = "graded"
 
-        # 5. Subtitles on top
-        chains.append(f"[{post_label}]subtitles={sub_escaped}:charenc=utf-8[out]")
+        # 5. Subtitles on top — or plain passthrough when text is not burned
+        if burn_text and sub_file:
+            chains.append(f"[{post_label}]subtitles={sub_escaped}:charenc=utf-8[out]")
+        else:
+            chains.append(f"[{post_label}]null[out]")
 
         # Assemble full filter complex
         filter_complex = ";".join(chains)
@@ -411,7 +422,7 @@ async def execute_render(
         cmd = ["ffmpeg", "-i", video_path]
         next_input = 1
         audio_map = "0:a?"
-        if overlay_path:
+        if burn_text and overlay_path:
             cmd += ["-i", overlay_path]
             next_input += 1
         # YouTube rejects files with no audio track — add a silent track if needed
@@ -450,7 +461,8 @@ async def execute_render(
                 f"FFmpeg failed (exit {result.returncode}): {detail}"
             )
 
-        os.unlink(sub_file)
+        if sub_file and os.path.exists(sub_file):
+            os.unlink(sub_file)
         output_paths.append(out_path)
 
     return output_paths

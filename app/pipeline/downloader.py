@@ -63,10 +63,6 @@ def _frameio_headers(share_id: str, op: str) -> dict:
     }
 
 
-def _is_google_drive(url: str) -> bool:
-    return "drive.google.com" in url
-
-
 def _is_frameio(url: str) -> bool:
     return "frame.io" in url
 
@@ -84,18 +80,20 @@ def _is_local_path(value: str) -> bool:
     return p.exists() and p.is_file()
 
 
-def _get_ydl_opts(output_path: str) -> dict:
+def _get_ydl_opts(output_path: str, preferred_height: int = 1080) -> dict:
     """Return yt-dlp options that try several clients to bypass bot checks."""
+    fmt = f"best[height<={preferred_height}]/best" if preferred_height > 0 else "best"
     return {
         "outtmpl": output_path,
+        "format": fmt,
         "quiet": True,
         "no_warnings": True,
-        # tv#embed is a combined client that avoids YouTube's sign-in wall.
-        # Also skip webpage/JS parsing to avoid bot-detection triggers.
+        # "default" lets yt-dlp auto-pick the player client that passes
+        # YouTube's bot check (tv_embedded works as of 2026; tv#embed no
+        # longer does).
         "extractor_args": {
             "youtube": {
-                "player_client": ["tv#embed"],
-                "player_skip": ["webpage", "js"],
+                "player_client": ["default"],
             }
         },
         # Mimic a real browser so we don't get blocked before extraction
@@ -107,17 +105,17 @@ def _get_ydl_opts(output_path: str) -> dict:
     }
 
 
-def execute_download(source: str, cookies_file: str | None = None, preferred_height: int = 720) -> str:
+def execute_download(source: str, cookies_file: str | None = None, preferred_height: int = 1080) -> str:
     """Resolve a video source to a local file path.
 
-    V1 supports:
+    Supports:
       - Local file paths (just copies to workspace)
-      - Google Drive URLs (downloads via yt-dlp)
       - Frame.io share links (downloads via Frame.io GraphQL share API)
       - Direct video file URLs (streams straight down)
+      - Any other http(s) link — YouTube, TikTok, Instagram, Google Drive,
+        etc. — downloaded via yt-dlp
 
-    `preferred_height` picks the Frame.io proxy quality closest to that
-    height (default 720p — small file, plenty for vertical shorts).
+    `preferred_height` caps the downloaded resolution (default 1080p).
     """
     WORKSPACE.mkdir(parents=True, exist_ok=True)
 
@@ -136,17 +134,18 @@ def execute_download(source: str, cookies_file: str | None = None, preferred_hei
     if _is_direct_file(source):
         return _download_direct(source)
 
-    # V1: only Google Drive URLs allowed from here
-    if not _is_google_drive(source):
+    # Everything else (YouTube, TikTok, Instagram, Google Drive, ...) is
+    # handled by yt-dlp. Reject non-http(s) values with a clear message.
+    if not (source.startswith("http://") or source.startswith("https://")):
         raise ValueError(
-            "Supported sources: Google Drive URLs, Frame.io share links, "
-            "direct video file links, or local file uploads. "
-            f"Got: {source[:80]}"
+            "Supported sources: YouTube, TikTok, Instagram, Google Drive, "
+            "Frame.io share links, direct video file links, or local file "
+            f"uploads. Got: {source[:80]}"
         )
 
-    # Google Drive download via yt-dlp
+    # Download via yt-dlp
     output_path = str(WORKSPACE / "%(title)s_%(id)s.%(ext)s")
-    opts = _get_ydl_opts(output_path)
+    opts = _get_ydl_opts(output_path, preferred_height=preferred_height)
     if cookies_file and Path(cookies_file).exists():
         opts["cookiefile"] = cookies_file
 

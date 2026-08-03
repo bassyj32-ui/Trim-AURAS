@@ -37,7 +37,7 @@
   <div class="section-label reveal" style="animation-delay:0.18s;">New short</div>
 
   <div class="url-field reveal" style="animation-delay:0.2s;">
-    <input class="url-input" id="urlInput" type="url" placeholder="Google Drive / Frame.io URL" autocomplete="url">
+    <input class="url-input" id="urlInput" type="url" placeholder="YouTube, TikTok, Google Drive / Frame.io link" autocomplete="url">
   </div>
 
   <div class="divider-or reveal" style="animation-delay:0.22s;">OR</div>
@@ -209,7 +209,7 @@ let selectedClip = null;
 let selectedFile = null;
 let campaignRules = '';
 let maxClips = 5;
-let preferredHeight = 720;
+let preferredHeight = 1080;
 let myLink = localStorage.getItem('trimaura_link') || '';
 let currentResultsJobId = null;
 
@@ -498,7 +498,7 @@ async function loadHistory() {
       historyEl.innerHTML = `<div class="vault-empty">
         <span class="vault-empty-icon">🎬</span>
         <p class="vault-empty-title">Welcome to TrimAURA</p>
-        <p class="vault-empty-desc">Paste a Google Drive or Frame.io URL, upload a video, pick a template, and generate shorts with AI-powered captions and SEO.</p>
+        <p class="vault-empty-desc">Paste a YouTube, TikTok, Google Drive or Frame.io link, upload a video, pick a template, and generate shorts with AI-powered captions and SEO.</p>
         <div class="vault-empty-steps">
           <div class="vault-step"><span class="vault-step-num">1</span> Add your video</div>
           <div class="vault-step"><span class="vault-step-num">2</span> Pick a template</div>
@@ -544,8 +544,8 @@ generateBtn.addEventListener('click', async () => {
   const hasFile = selectedFile !== null;
   const url = urlInput.value.trim();
 
-  if (!hasFile && !url) { showToast('Select a file or enter a Google Drive / Frame.io URL'); return; }
-  if (url && !url.includes('drive.google.com') && !url.includes('frame.io')) { showToast('Supported: Google Drive, Frame.io, or a direct video file link'); return; }
+  if (!hasFile && !url) { showToast('Select a file or enter a video link (YouTube, TikTok, etc.)'); return; }
+  if (url && !/^https?:\/\//i.test(url)) { showToast('Enter a valid link starting with http:// or https://'); return; }
 
   generateBtn.disabled = true;
   progressWrap.classList.add('active');

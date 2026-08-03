@@ -55,7 +55,7 @@ class CreateJobRequest(BaseModel):
     template_id: str = "blurpad_v1"
     campaign_rules: Optional[str] = None
     max_clips: int = 5
-    preferred_height: Optional[int] = 720  # Frame.io proxy height; 0 = original file
+    preferred_height: Optional[int] = 1080  # Caps download/Frame.io proxy height; 0 = original file
 
 
 class CreateJobResponse(BaseModel):
@@ -91,21 +91,19 @@ def _clip_posted(clip: VideoClip) -> list[str]:
 
 # --- Job Endpoints ---
 
-# Accepted URL hosts in V1
-_ALLOWED_HOSTS = ("drive.google.com", "frame.io")
+# Any http(s) link is accepted — yt-dlp resolves YouTube, TikTok, Instagram,
+# Google Drive, Frame.io, etc. Direct video file URLs also work.
 _VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".wmv", ".mts", ".m2ts")
 
 
 @router.post("/jobs", status_code=202)
 async def create_job(body: CreateJobRequest):
-    # V1: Google Drive, Frame.io share links, and direct video links are accepted.
-    # YouTube etc. are disabled on purpose (downloader.py enforces the same rule).
     url = (body.source_url or "").strip().lower()
-    if url and not any(host in url for host in _ALLOWED_HOSTS) and not url.endswith(_VIDEO_EXTS):
+    if url and not url.startswith(("http://", "https://")) and not url.endswith(_VIDEO_EXTS):
         raise HTTPException(
             400,
-            "Supported sources: Google Drive URLs, Frame.io share links, "
-            "direct video file links, or local file uploads",
+            "Source must be an http(s) video link (YouTube, TikTok, Instagram, "
+            "Google Drive, Frame.io, ...) or a direct video file URL",
         )
 
     with Session(engine) as session:

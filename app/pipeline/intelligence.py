@@ -244,16 +244,170 @@ def _detect_loud_windows(
 def extract_video_signals(video_path: str) -> dict[str, Any]:
     """Extract cheap audio/video signals to guide smarter clip cutting.
 
-    Returns {"scene_times": [...], "black_ranges": [...], "loud_windows": [...]}.
+    Returns {"duration": float|None, "scene_times": [...],
+    "black_ranges": [...], "loud_windows": [...]}.
     Every probe fails silently, so a missing file or a video without audio
     simply yields empty signals and the pipeline falls back to transcript-only
     selection.
     """
     return {
+        "duration": _detect_duration(video_path),
         "scene_times": _detect_scene_times(video_path),
         "black_ranges": _detect_black_ranges(video_path),
         "loud_windows": _detect_loud_windows(video_path),
     }
+
+
+def _detect_duration(video_path: str) -> float | None:
+    """Video duration in seconds via ffprobe; None on any failure."""
+    try:
+        res = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "csv=p=0", video_path,
+            ],
+            capture_output=True, text=True, timeout=60,
+        )
+        return float(res.stdout.strip()) if res.returncode == 0 else None
+    except (ValueError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+
+
+# --- Content-aware routing (no vision model needed) ---
+#
+# Different content types want different clip-selection strategies. These two
+# helpers classify the video from signals we already compute and, for videos
+# with no usable speech, pick clips directly from those signals so the job no
+# longer fails with "No speech detected".
+
+def classify_content(
+    segments: list[dict[str, Any]],
+    video_signals: dict[str, Any] | None,
+) -> str:
+    """Classify the video's content type from cheap signals.
+
+    - "speech": transcript covers >= 15% of the video (podcast, talking head,
+      commentary-heavy gaming) — transcript/DeepSeek selection works best.
+    - "action": little speech but frequent scene cuts (gameplay without
+      commentary, visual demo) — cut on scene boundaries + loud windows.
+    - "music": little speech and few cuts (music video, no-speech content) —
+      loudness/energy windows drive selection.
+    """
+    signals = video_signals or {}
+    duration = float(signals.get("duration") or 0)
+    if duration <= 0:
+        return "speech" if segments else "visual"
+
+    speech_s = sum(
+        max(0.0, float(s.get("end", 0)) - float(s.get("start", 0)))
+        for s in segments
+    )
+    speech_ratio = speech_s / duration
+    cuts_per_min = len(signals.get("scene_times") or []) / (duration / 60.0)
+
+    if speech_ratio >= 0.15:
+        return "speech"
+    if cuts_per_min >= 6:
+        return "action"
+    return "music"
+
+
+def select_signal_clips(
+    max_clips: int,
+    video_signals: dict[str, Any] | None,
+    existing_clips: list[dict[str, Any]] | None = None,
+    min_clip_s: float = 15.0,
+) -> list[dict[str, Any]]:
+    """Pick clips for videos with no usable speech (music, action, visual).
+
+    Uses loudness windows first (energy peaks), then the longest uninterrupted
+    scene chunks, then evenly spaced windows as a last resort. Returns the same
+    shape as DeepSeek's clips so downstream code is unchanged:
+    {'start', 'end', 'reason', 'score'}.
+    """
+    signals = video_signals or {}
+    duration = float(signals.get("duration") or 0)
+    existing = existing_clips or []
+
+    def overlaps(s: float, e: float) -> bool:
+        if any(s < x.get("end", 0) and e > x.get("start", 0) for x in existing):
+            return True
+        return any(s < c["end"] and e > c["start"] for c in clips)
+
+    def trim(s: float, e: float) -> tuple[float, float]:
+        if duration > 0:
+            s, e = max(0.0, s), min(duration, e)
+        if e - s < min_clip_s:
+            e = min(s + min_clip_s, duration) if duration else s + min_clip_s
+        return s, e
+
+    clips: list[dict[str, Any]] = []
+
+    # 1) Energy peaks: longest loud windows first (music + action)
+    loud = sorted(
+        signals.get("loud_windows") or [],
+        key=lambda w: w[1] - w[0],
+        reverse=True,
+    )
+    for ws, we in loud:
+        if len(clips) >= max_clips:
+            break
+        s, e = trim(ws, we)
+        if e - s < min_clip_s or overlaps(s, e):
+            continue
+        clips.append(
+            {
+                "start": round(s, 2),
+                "end": round(e, 2),
+                "reason": "High-energy moment (no speech detected)",
+                "score": 85,
+            }
+        )
+
+    # 2) Scene pacing: longest uninterrupted shots between cuts (action/visual)
+    if len(clips) < max_clips and duration > 0 and signals.get("scene_times"):
+        scenes = sorted(signals["scene_times"])
+        bounds = [0.0, *scenes, duration]
+        chunks = sorted(
+            ((a, b) for a, b in zip(bounds, bounds[1:]) if b - a >= min_clip_s),
+            key=lambda c: c[1] - c[0],
+            reverse=True,
+        )
+        for s, e in chunks:
+            if len(clips) >= max_clips:
+                break
+            if overlaps(s, e):
+                continue
+            clips.append(
+                {
+                    "start": round(s, 2),
+                    "end": round(e, 2),
+                    "reason": "Long uninterrupted shot (no speech detected)",
+                    "score": 75,
+                }
+            )
+
+    # 3) Last resort: evenly spaced windows across the whole video
+    if len(clips) < max_clips and duration > min_clip_s:
+        step = duration / max(max_clips, 1)
+        for i in range(max_clips):
+            if len(clips) >= max_clips:
+                break
+            s = i * step
+            e = min(s + min_clip_s, duration)
+            if e - s < min_clip_s or overlaps(s, e):
+                continue
+            clips.append(
+                {
+                    "start": round(s, 2),
+                    "end": round(e, 2),
+                    "reason": "Evenly spaced window (no speech detected)",
+                    "score": 70,
+                }
+            )
+
+    return clips
 
 
 def snap_clips_to_signals(
