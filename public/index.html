@@ -216,7 +216,7 @@ let campaignRules = '';
 let maxClips = 5;
 let preferredHeight = 1080;
 let myLink = localStorage.getItem('trimaura_link') || '';
-let cookiesText = '';
+let cookiesText = localStorage.getItem('trimaura_cookies') || '';  // restored on reload
 let currentResultsJobId = null;
 
 // Template gradient mapping (fallback)
@@ -349,18 +349,53 @@ maxClipsSlider.addEventListener('input', () => {
   maxClipsValue.textContent = maxClipsSlider.value;
 });
 
-// Read an exported cookies.txt into memory (sent with the next job only)
+// Read an exported cookies.txt into memory AND persist it in this browser,
+// so you only pick the file once (it survives reloads until it expires).
 cookiesFileInput.addEventListener('change', () => {
   const f = cookiesFileInput.files[0];
-  if (!f) { cookiesText = ''; cookiesFileName.textContent = ''; return; }
+  if (!f) { clearCookies(); return; }
   const reader = new FileReader();
   reader.onload = (e) => {
-    cookiesText = e.target.result || '';
-    cookiesFileName.textContent = '✓ ' + f.name + ' loaded (' + Math.round(cookiesText.length / 1024) + ' KB)';
+    const text = e.target.result || '';
+    if (!text.trim()) { clearCookies(); return; }
+    cookiesText = text;
+    let persisted = true;
+    try {
+      if (text.length > 2 * 1024 * 1024) throw new Error('too large for offline storage');
+      localStorage.setItem('trimaura_cookies', cookiesText);
+    } catch (err) {
+      persisted = false;
+      showToast('Cookies too large — used for this session only');
+    }
+    renderCookiesStatus('✓ ' + f.name + ' loaded (' + Math.round(cookiesText.length / 1024) + ' KB)' + (persisted ? ' — saved' : ''));
   };
-  reader.onerror = () => { cookiesText = ''; cookiesFileName.textContent = 'Could not read file'; };
+  reader.onerror = () => { clearCookies(); cookiesFileName.textContent = 'Could not read file'; };
   reader.readAsText(f);
 });
+
+function clearCookies() {
+  cookiesText = '';
+  cookiesFileName.textContent = '';
+  localStorage.removeItem('trimaura_cookies');
+  cookiesFileInput.value = '';
+}
+
+function renderCookiesStatus(msg) {
+  cookiesFileName.textContent = '';
+  const span = document.createElement('span');
+  span.textContent = msg || '';
+  const btn = document.createElement('button');
+  btn.textContent = 'Remove';
+  btn.style.cssText = 'margin-left:8px;background:none;border:none;color:var(--accent-ok,#2e9e5b);font-size:11px;text-decoration:underline;cursor:pointer;';
+  btn.addEventListener('click', clearCookies);
+  cookiesFileName.appendChild(span);
+  cookiesFileName.appendChild(btn);
+}
+
+// On reload: if a saved cookies.txt exists, show it and keep using it
+if (cookiesText) {
+  renderCookiesStatus('Saved cookies loaded (' + Math.round(cookiesText.length / 1024) + ' KB) — replacing this file updates it');
+}
 
 modalConfirm.addEventListener('click', () => {
   campaignRules = campaignRulesInput.value.trim();
