@@ -32,3 +32,7 @@ assets/output/
 uvicorn_*.txt
 output_err.txt
 check_err.py
+
+# Sensitive exports (never commit browser cookies)
+cookies.txt
+*.cookies.txt
