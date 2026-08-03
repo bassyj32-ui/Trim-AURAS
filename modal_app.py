@@ -180,6 +180,14 @@ def process_pipeline(job_id: int, job_data: dict | None = None):
 
         init_db()
 
+        # Persist the job's cookies.txt from the payload so the download phase
+        # can authorize YouTube/TikTok/Instagram even if the ASGI container's
+        # Volume write hasn't propagated yet.
+        if job_data and job_data.get("cookies"):
+            from app.pipeline.orchestrator import save_job_cookies
+
+            save_job_cookies(job_id, job_data.get("cookies"))
+
         # If the job record written by the ASGI container isn't visible yet
         # (Modal Volume propagation delay), create it locally from the payload
         # that was passed alongside job_id.
@@ -190,7 +198,7 @@ def process_pipeline(job_id: int, job_data: dict | None = None):
             with Session(engine) as session:
                 existing = session.get(Job, job_id)
                 if existing is None:
-                    job = Job(**{k: v for k, v in job_data.items() if k != "id"})
+                    job = Job(**{k: v for k, v in job_data.items() if k not in ("id", "cookies")})
                     job.id = job_id
                     session.add(job)
                     session.commit()

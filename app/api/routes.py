@@ -14,7 +14,12 @@ from app.config import MODAL, settings
 from app.database import engine
 from app.models import Job, JobStatus, PushSubscription, VideoClip, clip_vault_cutoff
 from app.api.sse import event_stream
-from app.pipeline.orchestrator import execute_pipeline, generate_more_clips, refresh_clip_seo
+from app.pipeline.orchestrator import (
+    execute_pipeline,
+    generate_more_clips,
+    refresh_clip_seo,
+    save_job_cookies,
+)
 from app.storage import generate_presigned_url
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -56,6 +61,7 @@ class CreateJobRequest(BaseModel):
     campaign_rules: Optional[str] = None
     max_clips: int = 5
     preferred_height: Optional[int] = 1080  # Caps download/Frame.io proxy height; 0 = original file
+    cookies: Optional[str] = None  # Netscape cookies.txt content (for login-walled / bot-blocked sources)
 
 
 class CreateJobResponse(BaseModel):
@@ -120,6 +126,17 @@ async def create_job(body: CreateJobRequest):
         session.refresh(job)
         job_id = job.id
 
+    # Persist optional cookies.txt so the pipeline worker (and later
+    # generate-more re-downloads) can authorize YouTube/TikTok/Instagram.
+    if body.cookies and body.cookies.strip():
+        save_job_cookies(job_id, body.cookies)
+        if MODAL:
+            try:
+                import modal as _modal
+                _modal.Volume.from_name("trimaura-data").commit()
+            except Exception as e:
+                print(f"[jobs] cookies volume commit failed (non-fatal): {e}")
+
     # Send a payload so the Modal worker can recreate the job record locally
     # if the Volume hasn't synced yet. This bypasses SQLite staleness on Modal
     # shared Volumes.
@@ -131,6 +148,7 @@ async def create_job(body: CreateJobRequest):
         "campaign_rules": body.campaign_rules or "",
         "max_clips": body.max_clips,
         "preferred_height": body.preferred_height if body.preferred_height is not None else 0,
+        "cookies": body.cookies or "",
         "status": JobStatus.PENDING,
     }
     await _dispatch_pipeline(job_id, job_payload)

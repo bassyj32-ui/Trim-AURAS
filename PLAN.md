@@ -1,7 +1,7 @@
 # TrimAURA — Build Plan & Roadmap
 
 > **Last updated:** 2026-08-03
-> **Status:** 🟢 V1 live on Modal — Warm cream UI, scale-to-zero, Whisper Turbo, Supabase Postgres, Frame.io GraphQL downloader, quality selector (1080p default), Publish Kit (TikTok/Shorts/Reels), FFmpeg "sight" signals, content-aware clip selection (speech/action/music), any-source downloads via yt-dlp (YouTube, TikTok, Instagram, Google Drive), clean clips (no burned text), PWA + push notifications, stress-tested (3/3 back-to-back, ~6 min/job)
+> **Status:** 🟢 V1 live on Modal — Warm cream UI, scale-to-zero, Whisper Turbo, Supabase Postgres, Frame.io GraphQL downloader, quality selector (1080p default), Publish Kit (TikTok/Shorts/Reels), FFmpeg "sight" signals, content-aware clip selection (speech/action/music), any-source downloads via yt-dlp (YouTube, TikTok, Instagram, Google Drive), optional cookies.txt upload (fixes YouTube "not a bot" blocks on cloud IPs), clean clips (no burned text), PWA + push notifications, stress-tested (3/3 back-to-back, ~6 min/job)
 > **URL:** <https://bassyj32--trimaura-fastapi-app.modal.run>
 
 ***
@@ -206,12 +206,12 @@ trimaura/
 | 7.28 | Any-source downloads (YouTube + all yt-dlp platforms)            | ✅          | Removed the 3-layer YouTube block (frontend host check, API whitelist, downloader guard). Any http(s) link now goes through yt-dlp: YouTube, TikTok, Instagram, Twitter/X, Vimeo, Google Drive, etc. Fixed YouTube bot-check: `player_client=["default"]` (old `tv#embed` was blocked) + updated yt-dlp. Verified end-to-end download locally. ⚠️ Some TikTok/Instagram videos are login-walled → need cookies (backlog #4) |
 | 7.29 | 1080p default download quality                                   | ✅          | `preferred_height` default 720 → **1080** everywhere (routes, orchestrator fallbacks, `execute_download` default, PWA selector default 1080p). yt-dlp format cap: `best[height<=1080]/best`. Original (0) still available per job |
 | 7.30 | Content-aware clip selection (speech/action/music)               | ✅          | `classify_content()`: transcript-coverage ratio + scene-cut density → type. Speech content uses DeepSeek transcript selection (unchanged); no-speech content (music video, gameplay w/o commentary, visual B-roll) now uses `select_signal_clips()`: loudness windows → longest scene chunks → even spacing. Removed the hard "No speech detected" job failure. SEO falls back to video title when transcript is empty. Verified: unit tests + real silent video produced 3 non-overlapping clips |
+| 7.31 | Optional cookies.txt upload (fixes YouTube bot-block on cloud IPs) | ✅        | Production back-to-back on a YouTube link failed 3/3 with "Sign in to confirm you're not a bot" on Modal's cloud IPs (works on local residential IP). Fix: PWA settings gains a "Cookies File" picker (export via "Get cookies.txt LOCALLY" extension) → sent with the job → persisted per job on the Volume (`/mnt/data/cookies/{job_id}.txt`, no DB schema change) → passed to yt-dlp (`opts["cookiefile"]`) in `execute_download`. `generate-more` re-downloads reuse the same file. Service-worker cache bumped v2→v3 |
 
 **Known limitations (V1):**
-- TikTok/Instagram downloads may fail on login-walled videos — cookie support is backlog #4
+- TikTok/Instagram login-walled videos still need an exported cookies.txt — upload it in Settings → Cookies File (fixes YouTube's bot check on cloud IPs too; solved for the YouTube case in 7.31)
 - Music/visual clips get generic SEO (title-only) since there's no transcript to mine
 - `select_signal_clips` is deterministic — "Generate more" may return nothing new once energy windows are exhausted
-- YouTube's bot check is partly IP-based; on Modal's cloud IPs it may be stricter than local
 
 ***
 
@@ -224,7 +224,7 @@ Ranked by ROI for the current solo/gaming workflow. Not scheduled.
 | 1 | **Karaoke / word-level animated captions** | 🟡 Medium | High (retention) | Word timestamps from Whisper (`timestamp_granularities=["word"]` in `transcriber.py`), new ASS builder in `video_editor.py` using `\k`/`\kf` tags, template `highlight_color` config. Fiddly timing-sync testing needed. |
 | 2 | **Silence / filler-word trimming** | 🟡 Medium | Medium | Cut pauses >0.5s (safer than removing "um/uh" — that needs audio+video+caption cuts at the same boundaries, prone to drift). |
 | 3 | **Face-aware crop (speaker tracking)** | 🔴 Hard | Low for gaming | OpenCV/MediaPipe face detection + smoothed crop trajectory + animated FFmpeg crop. Fragile on fast-cut, HUD-heavy gaming footage. Only pays off if pivoting to podcast/talking-head content. |
-| 4 | **Cookies file support (TikTok/Instagram/login-walled videos)** | 🟢 Easy | Medium | Optional `cookiefile` upload in the PWA, passed to yt-dlp (`opts["cookiefile"]` — plumbing already exists in `downloader.execute_download`). Unlocks login-walled YouTube/TikTok/Instagram posts; needed when the YouTube bot-check gets stricter on cloud IPs. |
+| 4 | ~~**Cookies file support (TikTok/Instagram/login-walled videos)**~~ | ~~🟢 Easy~~ | ~~Medium~~ | **✅ Shipped in 7.31** — PWA "Cookies File" picker → persisted per job → passed to yt-dlp (`opts["cookiefile"]`). Unlocks login-walled YouTube/TikTok/Instagram posts and fixes the YouTube bot-check on cloud IPs. |
 | — | ~~Music overlay~~ | ~~Easy~~ | — | **Explicitly not wanted** by the user — skip. |
 
 > All other Opus-clip features (B-roll, dubbing, speech enhancement, direct auto-post, scheduler) are intentionally out of scope for the solo tool.

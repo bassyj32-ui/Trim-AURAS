@@ -165,6 +165,11 @@
       <span>Best quality</span>
     </div>
 
+    <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin:16px 0 6px;letter-spacing:0.5px;">Cookies File <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional — fixes YouTube/TikTok "not a bot" blocks)</span></label>
+    <input type="file" id="cookiesFileInput" accept=".txt" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:13px;font-family:var(--font);outline:none;cursor:pointer;">
+    <div id="cookiesFileName" style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.4;"></div>
+    <div style="font-size:10px;color:var(--ink-dim);margin-top:4px;line-height:1.4;">How to get one: install a browser extension like "Get cookies.txt LOCALLY", open the site while logged in (e.g. YouTube), and export the cookies as a .txt file. It's only sent with this job (over HTTPS) to authorize the download.</div>
+
     <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin:16px 0 6px;letter-spacing:0.5px;">Your Link <span style="font-weight:400;text-transform:none;letter-spacing:0;">(Vyro profile / affiliate — added to captions)</span></label>
     <input id="linkInput" type="url" placeholder="https://vyro.club/yourprofile or your affiliate link" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:14px;font-family:var(--font);outline:none;">
 
@@ -211,6 +216,7 @@ let campaignRules = '';
 let maxClips = 5;
 let preferredHeight = 1080;
 let myLink = localStorage.getItem('trimaura_link') || '';
+let cookiesText = '';
 let currentResultsJobId = null;
 
 // Template gradient mapping (fallback)
@@ -271,6 +277,8 @@ const modalCancel = document.getElementById('modalCancel');
 const modalConfirm = document.getElementById('modalConfirm');
 const campaignRulesInput = document.getElementById('campaignRulesInput');
 const maxClipsSlider = document.getElementById('maxClipsSlider');
+const cookiesFileInput = document.getElementById('cookiesFileInput');
+const cookiesFileName = document.getElementById('cookiesFileName');
 const maxClipsValue = document.getElementById('maxClipsValue');
 
 // --- File Upload UI ---
@@ -339,6 +347,19 @@ modalCancel.addEventListener('click', closeSettings);
 
 maxClipsSlider.addEventListener('input', () => {
   maxClipsValue.textContent = maxClipsSlider.value;
+});
+
+// Read an exported cookies.txt into memory (sent with the next job only)
+cookiesFileInput.addEventListener('change', () => {
+  const f = cookiesFileInput.files[0];
+  if (!f) { cookiesText = ''; cookiesFileName.textContent = ''; return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    cookiesText = e.target.result || '';
+    cookiesFileName.textContent = '✓ ' + f.name + ' loaded (' + Math.round(cookiesText.length / 1024) + ' KB)';
+  };
+  reader.onerror = () => { cookiesText = ''; cookiesFileName.textContent = 'Could not read file'; };
+  reader.readAsText(f);
 });
 
 modalConfirm.addEventListener('click', () => {
@@ -594,7 +615,8 @@ generateBtn.addEventListener('click', async () => {
           template_id: templateId,
           campaign_rules: campaignRules,
           max_clips: maxClips,
-          preferred_height: preferredHeight
+          preferred_height: preferredHeight,
+          cookies: cookiesText || null
         })
       });
     }

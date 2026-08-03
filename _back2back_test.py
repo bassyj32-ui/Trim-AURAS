@@ -1,10 +1,10 @@
 """Back-to-back stress test against the live Modal backend.
 
-Fires N jobs with the same real Frame.io link back-to-back, polls them all
+Fires N jobs with the same source link back-to-back, polls them all
 concurrently, and reports each job's stage timeline + final result.
 
 Usage:
-    python _back2back_test.py [N] [global_timeout_s]
+    python _back2back_test.py [N] [global_timeout_s] [source_url] [height] [max_clips] [cookies_file]
 """
 import asyncio
 import sys
@@ -13,12 +13,18 @@ import time
 import httpx
 
 BASE = "https://bassyj32--trimaura-fastapi-app.modal.run"
-SOURCE = "https://next.frame.io/share/a969e3a9-c761-442a-8bfb-17a06b38174c/"
+SOURCE = sys.argv[3] if len(sys.argv) > 3 else "https://next.frame.io/share/a969e3a9-c761-442a-8bfb-17a06b38174c/"
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 3
 GLOBAL_TIMEOUT = int(sys.argv[2]) if len(sys.argv) > 2 else 1500
 TEMPLATE = "blurpad_v1"
-MAX_CLIPS = 3
-HEIGHT = 540  # smaller proxy = faster downloads under pressure
+MAX_CLIPS = int(sys.argv[5]) if len(sys.argv) > 5 else 3
+HEIGHT = int(sys.argv[4]) if len(sys.argv) > 4 else 540  # 0 = original, 1080 = full HD
+COOKIES_FILE = sys.argv[6] if len(sys.argv) > 6 else ""
+
+COOKIES_TEXT = ""
+if COOKIES_FILE:
+    with open(COOKIES_FILE, "r", encoding="utf-8") as f:
+        COOKIES_TEXT = f.read()
 
 TERMINAL = ("COMPLETED", "FAILED", "TIMEOUT")
 
@@ -31,6 +37,8 @@ async def create_job(client: httpx.AsyncClient, i: int) -> int:
         "max_clips": MAX_CLIPS,
         "preferred_height": HEIGHT,
     }
+    if COOKIES_TEXT:
+        payload["cookies"] = COOKIES_TEXT
     r = await client.post(f"{BASE}/api/jobs", json=payload, timeout=60)
     data = r.json()
     if r.status_code != 202 or not data.get("job_id"):
@@ -77,8 +85,9 @@ async def watch(client: httpx.AsyncClient, job_id: int, results: dict, t0: float
 
 
 async def main():
-    print(f"=== Back-to-back stress: {N} jobs, {MAX_CLIPS} clips each, 540p proxy ===")
+    print(f"=== Back-to-back stress: {N} jobs, {MAX_CLIPS} clips each, {HEIGHT}p quality ===")
     print(f"Source: {SOURCE}")
+    print(f"Cookies: {'loaded (' + COOKIES_FILE + ')' if COOKIES_TEXT else 'none'}")
     async with httpx.AsyncClient(timeout=60) as c:
         ids = []
         t0 = time.time()

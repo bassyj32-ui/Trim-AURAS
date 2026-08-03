@@ -84,7 +84,7 @@ trimaura/
 │   │
 │   └── pipeline/
 │       ├── orchestrator.py      # Modal worker execution controller
-│       ├── downloader.py       # Any http(s) link via yt-dlp (YouTube, TikTok, Instagram, GDrive), Frame.io GraphQL, local uploads
+│       ├── downloader.py       # Any http(s) link via yt-dlp (YouTube, TikTok, Instagram, GDrive; optional cookies.txt), Frame.io GraphQL, local uploads
 │       ├── transcriber.py      # Phase 2: Groq Whisper V3 Turbo (with Tenacity retry)
 │       ├── intelligence.py     # Phase 3: DeepSeek viral moment extractor & titles + content-aware routing (speech/action/music)
 │       ├── video_editor.py     # Phase 4: FFmpeg template applier & renderer
@@ -281,22 +281,24 @@ Initializes a video rendering job from a source URL.
 ```json
 {
   "title": "My Long Video",
-  "source_url": "https://next.frame.io/share/.../view/...",
+  "source_url": "https://www.youtube.com/watch?v=...",
   "template_id": "blurpad_v1",
   "campaign_rules": "SEI, crypto affiliate channel",
   "max_clips": 5,
-  "preferred_height": 720
+  "preferred_height": 1080,
+  "cookies": "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t...\t..."
 }
 ```
 
 | Field              | Type | Default          | Notes                                                              |
 | ------------------ | ---- | ---------------- | ------------------------------------------------------------------ |
 | `title`            | str  | `"Untitled Job"` | Job display name                                                   |
-| `source_url`       | str  | required         | Google Drive, Frame.io share link, or direct video URL             |
+| `source_url`       | str  | required         | Any http(s) video link (YouTube, TikTok, Instagram, Google Drive, Frame.io, direct file) — resolved via yt-dlp |
 | `template_id`      | str  | `"blurpad_v1"`   | Template used for rendering                                        |
 | `campaign_rules`   | str  | `""`             | SEO campaign instructions for the clip analyzer                    |
 | `max_clips`        | int  | `5`              | Maximum clips to generate                                          |
 | `preferred_height` | int  | `1080`           | Caps download/Frame.io proxy height; `0` = original full file (360/540/720/1080) |
+| `cookies`          | str  | `null`           | Optional Netscape-format cookies.txt content (export via "Get cookies.txt LOCALLY" extension). Authorizes login-walled / bot-blocked sources (YouTube on cloud IPs, TikTok, Instagram). Persisted per job on the Volume and passed to yt-dlp as `--cookies`. Never returned by any endpoint. |
 
 - **Response** **`202 Accepted`:**
 

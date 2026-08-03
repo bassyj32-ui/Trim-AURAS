@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 
 from app.database import engine
 from app.models import Job, JobStatus, VideoClip
+from app.config import MODAL
 from app.pipeline.downloader import execute_download
 from app.pipeline.transcriber import execute_transcribe
 from app.pipeline.intelligence import (
@@ -21,6 +22,31 @@ from app.storage import upload_to_r2
 # Persistent Volume paths (match modal_app.py)
 SOURCE_CACHE_DIR = Path("/mnt/data/sources")
 CLIPS_DIR = Path("/mnt/data/clips")
+# Cookies.txt per job (Netscape format). On Modal this lives on the shared
+# Volume so any worker (pipeline OR generate-more) can re-download with it.
+COOKIES_DIR = Path("/mnt/data/cookies") if MODAL else Path("tmp") / "cookies"
+
+
+def save_job_cookies(job_id: int, cookies_text: str | None) -> str | None:
+    """Persist a job's cookies.txt (Netscape format) to disk.
+
+    The file is keyed by job id so the pipeline worker and later
+    ``generate-more`` re-downloads can reuse it. Returns the file path, or
+    ``None`` when no usable cookies were provided.
+    """
+    if not cookies_text or not cookies_text.strip():
+        return None
+    COOKIES_DIR.mkdir(parents=True, exist_ok=True)
+    path = COOKIES_DIR / f"{job_id}.txt"
+    # Normalize Windows line endings — yt-dlp's Netscape parser expects \n
+    path.write_text(cookies_text.replace("\r\n", "\n").strip() + "\n", encoding="utf-8")
+    return str(path)
+
+
+def cookies_file_for(job_id: int) -> str | None:
+    """Return the saved cookies.txt path for a job, or None if not set."""
+    path = COOKIES_DIR / f"{job_id}.txt"
+    return str(path) if path.exists() else None
 
 
 async def _volume_commit():
@@ -152,6 +178,7 @@ async def _resolve_source(job_id: int, job) -> str:
         path = await asyncio.to_thread(
             execute_download,
             job.source_url,
+            cookies_file=cookies_file_for(job_id),
             preferred_height=job.preferred_height if job.preferred_height is not None else 1080,
         )
         _cache_source(job_id, path)
@@ -176,6 +203,7 @@ async def execute_pipeline(job_id: int):
         video_path = await asyncio.to_thread(
             execute_download,
             job.source_url,
+            cookies_file=cookies_file_for(job_id),
             preferred_height=job.preferred_height if job.preferred_height is not None else 1080,
         )
 
