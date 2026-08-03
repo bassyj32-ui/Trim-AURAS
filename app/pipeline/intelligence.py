@@ -313,6 +313,88 @@ def classify_content(
     return "music"
 
 
+# --- Auto template recommendation (content → template) ---
+#
+# Each template.json declares a `genres` keyword list. `recommend_template`
+# scores every template against the job's title + transcript (title hits are
+# worth 3x) plus a per-content-type affinity, and returns the best fit. With
+# no signals it falls back to blurpad_v1 (universal baseline).
+
+TEMPLATES_DIR = Path("assets") / "templates"
+
+# Content type → template boost so speech/action/music videos lean toward the
+# styles that research says perform best for them even with zero keyword hits.
+_CONTENT_AFFINITY: dict[str, dict[str, int]] = {
+    "speech": {"podcast_split_v1": 2, "brand_bold_v1": 1},
+    "action": {"gaming_neon_v1": 2, "mrbeast_energy_v1": 1},
+    "music": {"mrbeast_energy_v1": 2, "retro_vhs_v1": 1, "gaming_neon_v1": 1},
+}
+
+
+def _template_genres() -> dict[str, list[str]]:
+    """Load each template's genre keywords: {template_id: [lowercased kws]}."""
+    out: dict[str, list[str]] = {}
+    if not TEMPLATES_DIR.exists():
+        return out
+    for folder in sorted(TEMPLATES_DIR.iterdir()):
+        cfg = folder / "template.json"
+        if not folder.is_dir() or not cfg.exists():
+            continue
+        try:
+            data = json.loads(cfg.read_text(encoding="utf-8"))
+            kws = [str(k).lower() for k in (data.get("genres") or [])]
+            out[data.get("id", folder.name)] = kws
+        except Exception:
+            continue
+    return out
+
+
+def recommend_template(
+    content_type: str = "speech",
+    title: str = "",
+    transcript_text: str = "",
+) -> str:
+    """Pick the template that best matches the video's genre.
+
+    Scores each template by keyword hits in the title (×3) and transcript
+    (×1). The keyword winner wins; ties are broken by the content-type
+    affinity. When there's no keyword signal at all, non-speech content
+    (action/music) falls back to its affinity pick, and speech falls back to
+    ``blurpad_v1`` (the universal talking-head baseline).
+    """
+    genres = _template_genres()
+    if not genres:
+        return "blurpad_v1"
+    title_l = (title or "").lower()
+    transcript_l = (transcript_text or "").lower()
+    affinity = _CONTENT_AFFINITY.get(content_type, {})
+
+    scores = {}
+    for tid, kws in genres.items():
+        score = 0
+        for kw in kws:
+            if kw in title_l:
+                score += 3
+            if kw in transcript_l:
+                score += 1
+        scores[tid] = score
+
+    best = max(scores, key=scores.get)
+    if scores[best] == 0:
+        # No keyword signal — content-type affinity for speechless genres,
+        # otherwise the universal baseline.
+        if content_type in ("action", "music") and affinity:
+            best = max(affinity, key=affinity.get)
+        else:
+            best = "blurpad_v1"
+    else:
+        # Keyword winner(s); break ties with content affinity.
+        tied = [t for t, s in scores.items() if s == scores[best]]
+        if len(tied) > 1:
+            best = max(tied, key=lambda t: (scores[t], affinity.get(t, 0)))
+    return best
+
+
 def select_signal_clips(
     max_clips: int,
     video_signals: dict[str, Any] | None,

@@ -26,6 +26,7 @@ async def execute_transcribe(video_path: str) -> list[dict[str, Any]]:
             model="whisper-large-v3-turbo",
             response_format="verbose_json",
             language="en",
+            timestamp_granularities=["word"],
         )
 
     os.unlink(audio_path)
@@ -36,9 +37,49 @@ async def execute_transcribe(video_path: str) -> list[dict[str, Any]]:
             "start": round(seg.get("start", 0), 1),
             "end": round(seg.get("end", 0), 1),
             "text": seg.get("text", "").strip(),
+            "words": _words_for_segment(seg, response),
         })
 
     return segments
+
+
+def _words_for_segment(seg: dict[str, Any], response: Any) -> list[dict[str, Any]]:
+    """Attach word-level timestamps that fall inside this segment.
+
+    Groq (like OpenAI) returns a flat ``response.words`` array when
+    ``timestamp_granularities=["word"]`` is requested; some builds also nest
+    them inside each segment as ``seg["words"]``. Both shapes are handled so
+    the karaoke renderer always has per-word timing when available.
+    """
+    def norm(w) -> dict[str, Any]:
+        if isinstance(w, dict):
+            return {
+                "word": str(w.get("word", "")),
+                "start": float(w.get("start", 0) or 0),
+                "end": float(w.get("end", 0) or 0),
+            }
+        return {
+            "word": str(getattr(w, "word", "")),
+            "start": float(getattr(w, "start", 0) or 0),
+            "end": float(getattr(w, "end", 0) or 0),
+        }
+
+    seg_start = seg.get("start", 0)
+    seg_end = seg.get("end", 0)
+
+    nested = seg.get("words")
+    if isinstance(nested, list) and nested:
+        return [norm(w) for w in nested if norm(w)["word"]]
+
+    flat = getattr(response, "words", None) or []
+    if isinstance(flat, list) and flat:
+        return [
+            norm(w)
+            for w in flat
+            if norm(w)["word"] and seg_start <= norm(w)["start"] < seg_end
+        ]
+
+    return []
 
 
 def _extract_audio(video_path: str) -> str:

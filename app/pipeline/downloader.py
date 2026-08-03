@@ -80,6 +80,43 @@ def _is_local_path(value: str) -> bool:
     return p.exists() and p.is_file()
 
 
+def _ensure_pot_server() -> bool:
+    """Start the bgutil PO-token provider (single Rust binary) on localhost:4416.
+
+    yt-dlp's `bgutil-ytdlp-pot-provider` plugin auto-connects to this server to
+    mint proof-of-origin tokens, which help bypass YouTube's "Sign in to
+    confirm you're not a bot" challenge on datacenter IPs (Modal). No-op when
+    the binary isn't installed (local dev) or the server is already up.
+    """
+    import shutil
+    import subprocess
+    import time
+
+    if not shutil.which("bgutil-pot"):
+        return False
+    try:
+        httpx.get("http://127.0.0.1:4416/ping", timeout=2.0)
+        return True  # already running
+    except Exception:
+        pass
+    try:
+        subprocess.Popen(
+            ["bgutil-pot", "server", "--host", "127.0.0.1", "--port", "4416"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:
+        return False
+    for _ in range(40):  # wait up to ~20s for the server to come up
+        try:
+            httpx.get("http://127.0.0.1:4416/ping", timeout=2.0)
+            return True
+        except Exception:
+            time.sleep(0.5)
+    return False
+
+
 def _get_ydl_opts(output_path: str, preferred_height: int = 1080) -> dict:
     """Return yt-dlp options that try several clients to bypass bot checks."""
     fmt = f"best[height<={preferred_height}]/best" if preferred_height > 0 else "best"
@@ -157,6 +194,10 @@ def execute_download(source: str, cookies_file: str | None = None, preferred_hei
     opts = _get_ydl_opts(output_path, preferred_height=preferred_height)
     if cookies_file and Path(cookies_file).exists():
         opts["cookiefile"] = cookies_file
+
+    # Start the PO-token provider so yt-dlp can mint proof-of-origin tokens
+    # (helps against YouTube's bot challenge on datacenter IPs).
+    _ensure_pot_server()
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([source])

@@ -26,6 +26,7 @@ class Job(SQLModel, table=True):
     campaign_rules: Optional[str] = None          # SEO campaign rules per job
     max_clips: int = Field(default=5)             # Max clips to generate
     preferred_height: Optional[int] = Field(default=720)  # Frame.io proxy height (0 = original)
+    burn_captions: bool = Field(default=False)    # Burn animated word-level captions (karaoke, Opus-style)
 
     status: str = Field(default=JobStatus.PENDING)
     progress_percentage: int = Field(default=0)

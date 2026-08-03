@@ -38,6 +38,11 @@ image = (
     .run_commands(
         "curl -fsSL -o /usr/local/bin/deno.zip https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip",
         "unzip -o /usr/local/bin/deno.zip -d /usr/local/bin/ && rm -f /usr/local/bin/deno.zip",
+        # PO-token (proof-of-origin) provider — single Rust binary, no deps.
+        # yt-dlp uses it to bypass YouTube's "Sign in to confirm you're not a
+        # bot" challenge that Modal's datacenter IPs trigger even with cookies.
+        "curl -fsSL -o /usr/local/bin/bgutil-pot https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/releases/latest/download/bgutil-pot-linux-x86_64",
+        "chmod +x /usr/local/bin/bgutil-pot",
     )
     .pip_install(
         "fastapi>=0.115.0",
@@ -47,7 +52,9 @@ image = (
         "groq>=0.9.0",
         "openai>=1.0.0",
         "yt-dlp>=2024.12.0",
-        "curl_cffi>=0.9.0",
+        "curl_cffi>=0.14.0,<0.16",
+        # yt-dlp POT provider plugin (auto-registers bgutil:http provider)
+        "bgutil-ytdlp-pot-provider>=1.3.0",
         "psycopg2-binary>=2.9.0",
         "python-multipart>=0.0.12",
         "pydantic-settings>=2.4.0",
@@ -309,7 +316,124 @@ def _sync_clips_to_volume(job_id: int):
 
 
 # ===========================================================================
-# 3. Entrypoint — verify image builds
+# 3. Debug probe — verify deno + cookies work inside the DEPLOYED image
+# ===========================================================================
+@app.function(timeout=600, image=image, volumes={DATA_DIR: data_volume}, secrets=[
+    modal.Secret.from_name("trimaura-secrets-v2"),
+    modal.Secret.from_name("trimaura-supabase-keys"),
+    modal.Secret.from_name("trimaura-db-url"),
+])
+def yt_probe(url: str, cookies_text: str = "", impersonate: bool = False) -> str:
+    """Probe the deployed image: does deno exist? does yt-dlp extract formats
+    with the given cookies? Run via:  modal run modal_app.py::yt_probe ..."""
+    import os, subprocess, tempfile
+    from pathlib import Path
+
+    lines = []
+    lines.append(f"python: {os.sys.version.split()[0]}")
+    # 1. deno presence
+    deno = subprocess.run(["sh", "-lc", "command -v deno"], capture_output=True, text=True)
+    lines.append(f"deno on PATH: {deno.stdout.strip() or 'MISSING'}")
+    if deno.returncode == 0:
+        ver = subprocess.run(["deno", "--version"], capture_output=True, text=True)
+        lines.append(f"deno version: {ver.stdout.splitlines()[0] if ver.stdout else '?'}")
+    # 2. package versions
+    pkgs = subprocess.run(
+        ["sh", "-lc", "python -c \"import yt_dlp, curl_cffi; print('yt-dlp', yt_dlp.version.__version__); print('curl_cffi', curl_cffi.__version__)\""],
+        capture_output=True, text=True)
+    lines.append(pkgs.stdout.strip() or pkgs.stderr.strip())
+    # 3. cookies — from the argument, or fall back to a probe file on the
+    #    Volume (uploaded via: modal volume put trimaura-data cookies/probe.txt cookies.txt)
+    cookie_path = None
+    if cookies_text.strip():
+        cookie_path = "/tmp/probe_cookies.txt"
+        Path(cookie_path).write_text(cookies_text.replace("\r\n", "\n"))
+        lines.append(f"cookies: from arg ({len(cookies_text)} chars)")
+    elif Path(f"{DATA_DIR}/cookies/probe.txt").exists():
+        cookie_path = f"{DATA_DIR}/cookies/probe.txt"
+        lines.append(f"cookies: from volume ({Path(cookie_path).stat().st_size} bytes)")
+    else:
+        lines.append("cookies: none")
+    # 3.5 impersonate targets available
+    ip = subprocess.run(["yt-dlp", "--list-impersonate-targets"], capture_output=True, text=True, timeout=60)
+    targets_out = (ip.stdout or ip.stderr or "").strip()
+    lines.append("impersonate targets list:")
+    lines += ["  " + l for l in targets_out.splitlines()[:20]]
+    # 3.6 curl_cffi direct check
+    cc = subprocess.run(
+        ["sh", "-lc", "python -c \"import curl_cffi, sys; print('ok', curl_cffi.__version__, sys.modules.get('curl_cffi._wrapper'))\""],
+        capture_output=True, text=True)
+    lines.append("curl_cffi check: " + (cc.stdout.strip() or cc.stderr.strip()[:200]))
+    # 4. start POT server (bgutil-pot) — required by the yt-dlp plugin
+    pot_start = subprocess.Popen(
+        ["bgutil-pot", "server", "--host", "127.0.0.1", "--port", "4416"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    import time
+    pot_ok = False
+    for _ in range(40):
+        try:
+            import urllib.request
+            urllib.request.urlopen("http://127.0.0.1:4416/ping", timeout=2)
+            pot_ok = True
+            break
+        except Exception:
+            time.sleep(0.5)
+    lines.append(f"pot server: {'UP on 4416' if pot_ok else 'FAILED to start'}")
+    # plugin registration check
+    vv = subprocess.run(
+        ["yt-dlp", "-v", "--skip-download", url],
+        capture_output=True, text=True, timeout=180)
+    vv_out = (vv.stdout or "") + (vv.stderr or "")
+    pot_line = next((l for l in vv_out.splitlines() if "PO Token Providers" in l), "not found")
+    lines.append("pot providers: " + pot_line.strip())
+    # 4.5 detailed verbose run with cookies+impersonate to see if the POT is attached
+    if cookie_path:
+        vv2 = subprocess.run(
+            ["yt-dlp", "-v", "--skip-download", "--cookies", cookie_path,
+             "--impersonate", "chrome", url],
+            capture_output=True, text=True, timeout=240)
+        v2 = ((vv2.stdout or "") + (vv2.stderr or ""))
+        for key in ("pot", "visitor", "token", "Bot", "bot", "403", "confirm", "player_client", "player client", "nsig", "n-sig"):
+            hit = next((l for l in v2.splitlines() if key.lower() in l.lower()), None)
+            if hit:
+                lines.append(f"v-{key}: {hit.strip()[:220]}")
+        if vv2.returncode != 0:
+            tail = [l for l in v2.splitlines() if l.strip()][-4:]
+            lines += ["  v-tail: " + t.strip()[:220] for t in tail]
+    # 5. extraction — try several player clients & impersonation combos
+    clients = ["default", "tv", "web_embedded", "android", "android_vr", "ios"]
+    base_cmd = ["yt-dlp", "--skip-download", "--no-warnings", url]
+    if cookie_path:
+        base_cmd += ["--cookies", cookie_path]
+    results = []
+    for client in clients:
+        for imp in (["chrome"] if impersonate else [None]):
+            cmd = base_cmd + ["--extractor-args", f"youtube:player_client={client}"]
+            if imp:
+                cmd += ["--impersonate", imp]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            out = (proc.stdout or "").strip()
+            err = (proc.stderr or "").strip()
+            if proc.returncode == 0:
+                results.append(f"OK    client={client} impersonate={imp or 'off'} formats={len(out.splitlines())}")
+            else:
+                tail = " | ".join(err.strip().splitlines()[-2:]) if err else "?"
+                results.append(f"FAIL  client={client} impersonate={imp or 'off'} :: {tail[-180:]}")
+    lines += results
+    result = "\n".join(lines)
+    # Write result to the Volume so it can be read back locally even when
+    # `modal run` console output isn't captured.
+    try:
+        Path(f"{DATA_DIR}/cookies/probe_result.txt").write_text(result)
+        data_volume.commit()
+    except Exception as e:
+        result += f"\n(write result to volume failed: {e})"
+    return result
+
+
+# ===========================================================================
+# 4. Entrypoint — verify image builds
 # ===========================================================================
 @app.local_entrypoint()
 def build_check():

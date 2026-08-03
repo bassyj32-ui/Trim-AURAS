@@ -12,6 +12,7 @@ from app.pipeline.intelligence import (
     classify_content,
     execute_analyze,
     extract_video_signals,
+    recommend_template,
     select_signal_clips,
     snap_clips_to_signals,
 )
@@ -231,6 +232,7 @@ async def execute_pipeline(job_id: int):
         video_signals = await asyncio.to_thread(extract_video_signals, video_path)
 
         has_speech = len(_get_transcript_text(segments).strip()) >= 10
+        content_type = classify_content(segments, video_signals)
         if has_speech:
             # Transcript-driven selection (podcasts, talking heads, commentary)
             clips = await execute_analyze(
@@ -243,7 +245,6 @@ async def execute_pipeline(job_id: int):
             # No usable speech (music video, gameplay without commentary,
             # visual B-roll): route to signal-based selection instead of
             # failing the job.
-            content_type = classify_content(segments, video_signals)
             clips = select_signal_clips(
                 max_clips=job.max_clips,
                 video_signals=video_signals,
@@ -262,7 +263,21 @@ async def execute_pipeline(job_id: int):
 
         # --- Phase 4: Render ---
         _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
-        rendered_paths = await execute_render(video_path, clips, segments, job.template_id)
+        # Resolve "auto" template by genre and persist the pick so the frontend
+        # shows the real template and generate-more reuses it.
+        template_id = job.template_id or "auto"
+        if template_id == "auto":
+            template_id = recommend_template(
+                content_type,
+                title=job.title or "",
+                transcript_text=_get_transcript_text(segments),
+            )
+            _update_job(job_id, template_id=template_id)
+            print(
+                f"[pipeline] auto template -> {template_id} "
+                f"(content_type={content_type})"
+            )
+        rendered_paths = await execute_render(video_path, clips, segments, template_id)
 
         # --- Phase 5: SEO & Upload (per clip) ---
         transcript_text = _get_transcript_text(segments)
@@ -407,7 +422,9 @@ async def generate_more_clips(job_id: int, count: int = 3):
 
         # Render new clips
         _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
-        rendered_paths = await execute_render(tmp_video, clips, segments, job.template_id)
+        rendered_paths = await execute_render(
+            tmp_video, clips, segments, job.template_id, burn_text=job.burn_captions
+        )
 
         # SEO + upload
         transcript_text = _get_transcript_text(segments)

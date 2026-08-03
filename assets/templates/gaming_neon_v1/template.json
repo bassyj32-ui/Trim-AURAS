@@ -2,6 +2,7 @@
   "id": "gaming_neon_v1",
   "name": "Gaming Neon v1",
   "description": "Sleek gaming aesthetic — cyan neon corner glow, magenta accents, bold uppercase subtitles. +40-55% retention for gaming content.",
+  "genres": ["gaming", "game", "gameplay", "esports", "minecraft", "fortnite", "valorant", "cod", "gta", "league of legends", "speedrun", "walkthrough", "lets play", "gamer", "twitch", "streamer", "roblox", "playthrough"],
   "canvas": { "width": 1080, "height": 1920, "fps": 30 },
   "video_slot": {
     "width": 1080, "height": 1920,

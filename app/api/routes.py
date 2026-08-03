@@ -57,11 +57,12 @@ else:
 class CreateJobRequest(BaseModel):
     title: str = "Untitled Job"
     source_url: str
-    template_id: str = "blurpad_v1"
+    template_id: str = "auto"  # "auto" = best-fit template by genre; or a specific id like "gaming_neon_v1"
     campaign_rules: Optional[str] = None
     max_clips: int = 5
     preferred_height: Optional[int] = 1080  # Caps download/Frame.io proxy height; 0 = original file
     cookies: Optional[str] = None  # Netscape cookies.txt content (for login-walled / bot-blocked sources)
+    burn_captions: bool = False  # Burn animated word-level captions (karaoke, Opus-style)
 
 
 class CreateJobResponse(BaseModel):
@@ -120,6 +121,7 @@ async def create_job(body: CreateJobRequest):
             campaign_rules=body.campaign_rules,
             max_clips=body.max_clips,
             preferred_height=body.preferred_height,
+            burn_captions=body.burn_captions,
         )
         session.add(job)
         session.commit()
@@ -163,7 +165,7 @@ async def create_job(body: CreateJobRequest):
 @router.post("/jobs/upload", status_code=202)
 async def upload_job(
     file: UploadFile = File(...),
-    template_id: str = "blurpad_v1",
+    template_id: str = "auto",
     campaign_rules: Optional[str] = Form(None),
     max_clips: int = Form(5),
 ):
@@ -191,6 +193,7 @@ async def upload_job(
             template_id=template_id,
             campaign_rules=campaign_rules,
             max_clips=max_clips,
+            burn_captions=burn_captions,
         )
         session.add(job)
         session.commit()
@@ -207,6 +210,7 @@ async def upload_job(
         "template_id": template_id,
         "campaign_rules": campaign_rules or "",
         "max_clips": max_clips,
+        "burn_captions": burn_captions,
         "status": JobStatus.PENDING,
     }
     await _dispatch_pipeline(job_id, job_payload)

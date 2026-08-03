@@ -1,6 +1,8 @@
 """Cloudflare R2 storage helpers.
 
-R2 is currently DISABLED (TLS cert not provisioned).
+R2 is currently DISABLED (TLS cert not provisioned — uploads fail with
+SSLV3_ALERT_HANDSHAKE_FAILURE, so they'd only add latency before falling
+back to the Modal Volume).
 All clip storage falls back to the Modal Volume (or local tmp/).
 Set ``config.R2_ENABLED = True`` once Cloudflare resolves the incident.
 """

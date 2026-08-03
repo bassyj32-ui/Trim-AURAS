@@ -175,27 +175,82 @@ def _enrich_with_emojis(text: str) -> str:
 # ASS subtitle builder
 # ---------------------------------------------------------------------------
 
+def _build_karaoke_line(
+    seg: dict[str, Any], clip_start: float, clip_end: float
+) -> tuple[str | None, float, float]:
+    """Build one ASS karaoke dialogue line from a segment's word timestamps.
+
+    Each word becomes a ``\\k`` syllable (duration in centiseconds) so the
+    template's highlight colour fills in word-by-word as it is spoken — the
+    classic Opus-style animated caption. Times are relative to ``clip_start``.
+    Returns ``(text, rel_start, rel_end)`` or ``(None, 0, 0)`` when the
+    segment has no usable words inside the clip window.
+    """
+    words = seg.get("words") or []
+    parts: list[str] = []
+    rel_start: float | None = None
+    rel_end = 0.0
+
+    for w in words:
+        ws = float(w.get("start", 0) or 0)
+        we = float(w.get("end", 0) or ws)
+        if we <= clip_start or ws >= clip_end:
+            continue
+        word = str(w.get("word", "")).strip()
+        if not word:
+            continue
+        r_s = max(ws - clip_start, 0.0)
+        r_e = min(we - clip_start, clip_end - clip_start)
+        if r_e - r_s < 0.05:
+            continue
+        if rel_start is None:
+            rel_start = r_s
+        rel_end = max(rel_end, r_e)
+        dur_cs = max(int(round((r_e - r_s) * 100)), 1)
+        # Escape ASS special chars per-word; the \k tags themselves must stay
+        # raw (the caller does NOT run the whole-line escape in karaoke mode).
+        safe = word.replace("{", "\\{").replace("}", "\\}")
+        parts.append(f"{{\\k{dur_cs}}}{safe}")
+
+    if not parts or rel_start is None:
+        return None, 0.0, 0.0
+    return " ".join(parts), rel_start, rel_end
+
+
 def _build_subtitle_file(
     segments: list[dict[str, Any]],
     clip_start: float,
     clip_end: float,
     sub_style: dict[str, Any],
     name: str = "subs",
+    karaoke: bool = False,
 ) -> str:
-    """Create an ASS subtitle file in the render workspace."""
+    """Create an ASS subtitle file in the render workspace.
+
+    When ``karaoke=True`` each word is emitted with a ``\\k`` timing tag so
+    words highlight in the template's ``highlight_color`` as they're spoken
+    (Opus-style). Words come from each segment's ``words`` list (populated by
+    the transcriber when Whisper returns word timestamps); segments without
+    words fall back to plain text.
+    """
     RENDER_DIR.mkdir(parents=True, exist_ok=True)
     ass_path = str(RENDER_DIR / f"{name}.ass")
 
     font_name = sub_style.get("font_name", "Arial")
     font_size = sub_style.get("font_size", 28)
-    primary = sub_style.get("primary_color", "&H00FFFFFF")
+    # Karaoke: upcoming words render white and flip to the template's accent
+    # colour as they're spoken (secondary = already-spoken colour).
+    primary = "&H00FFFFFF" if karaoke else sub_style.get("primary_color", "&H00FFFFFF")
+    secondary = (
+        sub_style.get("highlight_color", "&H0000FFFF") if karaoke else "&H000000FF"
+    )
     outline_color = sub_style.get("outline_color", "&H00000000")
     outline_w = sub_style.get("outline_width", 3)
     alignment = sub_style.get("alignment", 2)
     margin_v = sub_style.get("margin_v", 180)
 
     style_line = (
-        f"Style: Default,{font_name},{font_size},{primary},&H000000FF,"
+        f"Style: Default,{font_name},{font_size},{primary},{secondary},"
         f"{outline_color},&H00000000,0,0,0,0,100,100,0,0,1,{outline_w},0,"
         f"{alignment},20,20,{margin_v},1"
     )
@@ -222,17 +277,28 @@ def _build_subtitle_file(
         if seg_end <= clip_start or seg_start >= clip_end:
             continue
 
-        rel_start = max(seg_start - clip_start, 0)
-        rel_end = min(seg_end - clip_start, clip_end - clip_start)
+        if karaoke:
+            kara_text, k_start, k_end = _build_karaoke_line(seg, clip_start, clip_end)
+            if kara_text is not None:
+                rel_start = k_start
+                rel_end = k_end
+                safe_text = _enrich_with_emojis(kara_text)
+            else:
+                # No word timestamps for this segment — fall back to plain text
+                rel_start = max(seg_start - clip_start, 0)
+                rel_end = min(seg_end - clip_start, clip_end - clip_start)
+                safe_text = _enrich_with_emojis(text).replace("{", "\\{").replace("}", "\\}")
+        else:
+            rel_start = max(seg_start - clip_start, 0)
+            rel_end = min(seg_end - clip_start, clip_end - clip_start)
+            if rel_end - rel_start < 0.5:
+                continue
+            # Inject emojis into subtitle text
+            safe_text = _enrich_with_emojis(text).replace("{", "\\{").replace("}", "\\}")
 
-        if rel_end - rel_start < 0.5:
+        if rel_end - rel_start < 0.05:
             continue
 
-        # Inject emojis into subtitle text
-        text = _enrich_with_emojis(text)
-
-        # Escape ASS special chars: {} are override tags
-        safe_text = text.replace("{", "\\{").replace("}", "\\}")
         lines.append(
             f"Dialogue: 0,{_fmt_ass_time(rel_start)},{_fmt_ass_time(rel_end)},Default,,0,0,0,,{safe_text}"
         )
@@ -284,18 +350,23 @@ async def execute_render(
     segments: list[dict[str, Any]],
     template_id: str,
     burn_text: bool = False,
+    apply_overlay: bool = True,
 ) -> list[str]:
     """Render each clip from source video using the template.
 
-    When burn_text=False (the default) NO subtitles or overlay graphics are
-    burned onto the video — the clip is clean footage and any on-screen text
-    is added by the user afterwards. When burn_text=True the template's ASS
-    subtitles and PNG overlay are applied.
+    The template's PNG overlay frame (corner glow, scanlines, corner blocks,
+    bottom bar, etc.) is composited by default (apply_overlay=True) so every
+    template renders with a distinct look — this is what makes "Auto"
+    template picks visually different from each other. burn_text only
+    controls whether ASS subtitles are burned on; when False (the default)
+    the clip stays text-free so any on-screen captions can be added by the
+    user afterwards. When burn_text=True the template's ASS subtitles are
+    applied on top of the overlay.
 
     Template features:
       - Ken Burns subtle zoom on the main video slot
       - Color grading (brightness, contrast, saturation, gamma)
-      - Optional PNG overlay image per template (burn_text only)
+      - PNG overlay image per template (apply_overlay)
       - ASS subtitle overlay with emoji injection (burn_text only)
     """
     RENDER_DIR.mkdir(parents=True, exist_ok=True)
@@ -323,7 +394,8 @@ async def execute_render(
         sub_file = None
         if burn_text:
             sub_file = _build_subtitle_file(
-                segments, clip["start"], clip["end"], sub_style, f"subs_{i}"
+                segments, clip["start"], clip["end"], sub_style, f"subs_{i}",
+                karaoke=burn_text,
             )
 
         width, height = canvas["width"], canvas["height"]
@@ -388,11 +460,11 @@ async def execute_render(
             chains.append(f"[bg][main]overlay={sx}:{sy}[withvid]")
             post_label = "withvid"
 
-        # 3. Optional PNG overlay (composited on top) — template branding/text
-        if burn_text and overlay_path:
+        # 3. Optional PNG overlay (composited on top) — template frame/branding
+        if apply_overlay and overlay_path:
             ov_escaped = _ffmpeg_escape_path(overlay_path)
             chains.append(
-                f"[1:v]format=rgba[overlay];[{post_label}]overlay=0:0[withovl]"
+                f"[1:v]format=rgba[overlay];[{post_label}][overlay]overlay=0:0[withovl]"
             )
             post_label = "withovl"
 
@@ -422,7 +494,7 @@ async def execute_render(
         cmd = ["ffmpeg", "-i", video_path]
         next_input = 1
         audio_map = "0:a?"
-        if burn_text and overlay_path:
+        if apply_overlay and overlay_path:
             cmd += ["-i", overlay_path]
             next_input += 1
         # YouTube rejects files with no audio track — add a silent track if needed

@@ -45,6 +45,8 @@ if MODAL:
     settings.app_env = "production"
 
 # -- Cloudflare R2 toggle ---------------------------------------------------
-# Cloudflare R2 S3 API TLS cert is not provisioned for this account yet.
-# Set True once resolved (https://www.cloudflarestatus.com/incidents/py46dmbg0t0t)
-R2_ENABLED = True
+# Cloudflare R2 S3 API TLS cert is not provisioned for this account yet,
+# so uploads fail with SSLV3_ALERT_HANDSHAKE_FAILURE and only add latency
+# before falling back to the Modal Volume. Keep R2 disabled until the cert
+# is provisioned (https://www.cloudflarestatus.com/incidents/py46dmbg0t0t).
+R2_ENABLED = False
