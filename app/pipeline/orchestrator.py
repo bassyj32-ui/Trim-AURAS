@@ -284,7 +284,6 @@ async def execute_pipeline(job_id: int):
             job_id,
             "PIPELINE_START",
             source_url=(job.source_url or "")[:160],
-            source_type=job.source_type or "",
             title=(job.title or "")[:80],
             template_id=job.template_id or "auto",
             max_clips=job.max_clips,

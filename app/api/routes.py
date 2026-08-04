@@ -331,7 +331,6 @@ def job_diag(job_id: int):
             "error": job.error_message,
             "created_at": job.created_at.isoformat() if job.created_at else None,
             "source_url": (job.source_url or "")[:160],
-            "source_type": job.source_type or "",
         }
 
     if MODAL:
