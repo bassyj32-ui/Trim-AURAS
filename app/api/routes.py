@@ -21,6 +21,7 @@ from app.pipeline.orchestrator import (
     save_job_cookies,
     trim_clip,
 )
+from app.pipeline.downloader import _is_youtube
 from app.storage import generate_presigned_url
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -124,8 +125,17 @@ async def create_job(body: CreateJobRequest):
     if url and not url.startswith(("http://", "https://")) and not url.endswith(_VIDEO_EXTS):
         raise HTTPException(
             400,
-            "Source must be an http(s) video link (YouTube, TikTok, Instagram, "
+            "Source must be an http(s) video link (TikTok, Instagram, "
             "Google Drive, Frame.io, ...) or a direct video file URL",
+        )
+
+    # YouTube is disabled at this stage — reject it up-front so the user gets
+    # a clear message instead of a job that dies in the download phase.
+    if _is_youtube(body.source_url):
+        raise HTTPException(
+            400,
+            "YouTube is disabled at this stage — use a direct video link "
+            "(mp4/mov), Google Drive, Frame.io, or upload the file instead",
         )
 
     with Session(engine) as session:

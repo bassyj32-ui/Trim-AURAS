@@ -22,6 +22,12 @@ _HEADERS = {
 
 _VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".wmv", ".mts", ".m2ts"}
 
+
+def _is_youtube(url: str) -> bool:
+    """True for any youtube.com / youtu.be link (watch, shorts, live, embed)."""
+    u = (url or "").strip().lower()
+    return "youtube.com" in u or "youtu.be" in u
+
 # Frame.io "next" share links are served through the GraphQL API. Anonymous
 # viewers authenticate with `x-frameio-share-authentication: base64(share_id)`
 # plus any client/session headers — no real account needed.
@@ -142,10 +148,13 @@ def _get_ydl_opts(output_path: str, preferred_height: int = 1080) -> dict:
     }
     # TLS impersonation (Chrome fingerprint via curl_cffi) helps against
     # YouTube's anti-bot; silently skipped when curl_cffi isn't installed.
+    # yt-dlp 2025+ requires an ImpersonateTarget OBJECT here — a raw string
+    # like "chrome" crashes YoutubeDL.__init__ with a silent AssertionError.
     try:
         import curl_cffi  # noqa: F401
+        from yt_dlp.networking.impersonate import ImpersonateTarget
 
-        opts["impersonate"] = "chrome"
+        opts["impersonate"] = ImpersonateTarget.from_str("chrome")
     except ImportError:
         pass
     return opts
@@ -180,8 +189,17 @@ def execute_download(source: str, cookies_file: str | None = None, preferred_hei
     if _is_direct_file(source):
         return _download_direct(source)
 
-    # Everything else (YouTube, TikTok, Instagram, Google Drive, ...) is
-    # handled by yt-dlp. Reject non-http(s) values with a clear message.
+    # YouTube is disabled at this stage — Modal datacenter IPs get bot-flagged
+    # ("Sign in to confirm you're not a bot") even with cookies/impersonation,
+    # so a YouTube job would just fail. Fail fast with a clear message.
+    if _is_youtube(source):
+        raise ValueError(
+            "YouTube is disabled at this stage — use a direct video link "
+            "(mp4/mov), Google Drive, Frame.io, or upload the file instead"
+        )
+
+    # Everything else (TikTok, Instagram, Google Drive, ...) is handled by
+    # yt-dlp. Reject non-http(s) values with a clear message.
     if not (source.startswith("http://") or source.startswith("https://")):
         raise ValueError(
             "Supported sources: YouTube, TikTok, Instagram, Google Drive, "
