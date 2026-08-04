@@ -63,6 +63,10 @@ image = (
         "python-dotenv>=1.0.1",
         "sentry-sdk>=2.0.0",
         "pywebpush>=1.14.0",
+        # Face-aware crop: OpenCV Haar cascades (bundled with the wheel) — no
+        # model downloads, no fragile mediapipe build on Python 3.13. The
+        # mediapipe path in face_track.py only activates if it's importable.
+        "opencv-python-headless>=4.10.0",
     )
     .env({"MODAL": "1"})
     .add_local_dir("./app", remote_path="/root/app", copy=True)

@@ -23,6 +23,7 @@ class Job(SQLModel, table=True):
     # Clip Vault: keep source video + transcript for re-generation
     source_r2_key: Optional[str] = None          # R2 key of the uploaded source video
     transcript_json: Optional[str] = None         # Full transcript JSON (segments)
+    face_track_json: Optional[str] = None         # Normalized face track [{t,cx,cy}] for animated crop
     campaign_rules: Optional[str] = None          # SEO campaign rules per job
     max_clips: int = Field(default=5)             # Max clips to generate
     preferred_height: Optional[int] = Field(default=720)  # Frame.io proxy height (0 = original)

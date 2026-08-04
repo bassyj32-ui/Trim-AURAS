@@ -426,6 +426,129 @@ def _has_audio_stream(video_path: str) -> bool:
     return bool(probe.stdout.strip())
 
 
+def _probe_dimensions(video_path: str) -> tuple[int, int] | None:
+    """Return (width, height) of the source video's first video stream."""
+    probe = subprocess.run(
+        [
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "csv=p=0:s=x",
+            video_path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    line = probe.stdout.strip()
+    if "x" in line:
+        w, h = line.split("x", 1)
+        try:
+            return int(w), int(h)
+        except ValueError:
+            pass
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Face-aware crop — animated cover crop that follows the speaker
+# ---------------------------------------------------------------------------
+
+_MAX_CROP_SAMPLES = 180  # keeps each axis expression < ~15KB (Windows cmd limit)
+
+
+def _lerp_expr(pts: list[tuple[float, float, float]], axis: int) -> str:
+    """Piecewise-linear FFmpeg expression from (t, x, y) samples.
+
+    ``axis`` selects x (1) or y (2). The timeline is partitioned half-open
+    (``[t_i, t_{i+1})``) so each sample point is counted exactly once —
+    ``between()`` alone is inclusive on BOTH ends and would double-count the
+    value at shared sample instants. For ``t`` before the first sample the
+    value is held at the first point; after the last it is held at the last
+    point. A pure, testable function.
+    """
+    if len(pts) == 1:
+        return f"{pts[0][axis]:.3f}"
+    terms: list[str] = []
+    t0, v0 = pts[0][0], pts[0][axis]
+    terms.append(f"lt(t,{t0:.3f})*{v0:.3f}")
+    for i in range(len(pts) - 1):
+        t1, v1 = pts[i][0], pts[i][axis]
+        t2, v2 = pts[i + 1][0], pts[i + 1][axis]
+        dt = t2 - t1
+        if dt <= 0:
+            continue
+        slope = (v2 - v1) / dt
+        terms.append(
+            f"gte(t,{t1:.3f})*lt(t,{t2:.3f})*({v1:.3f}+{slope:.4f}*(t-{t1:.3f}))"
+        )
+    tn, vn = pts[-1][0], pts[-1][axis]
+    terms.append(f"gte(t,{tn:.3f})*{vn:.3f}")
+    return "+".join(terms)
+
+
+def _build_animated_crop(
+    face_track: list[dict],
+    trim_start: float,
+    trim_end: float,
+    cuts_rel: list[tuple[float, float]],
+    src_w: int,
+    src_h: int,
+    canvas_w: int,
+    canvas_h: int,
+    slack: float = 1.15,
+) -> tuple[int, int, str, str] | None:
+    """Plan a face-following cover crop for one clip.
+
+    Returns ``(scale_w, scale_h, x_expr, y_expr)`` or ``None`` when the
+    track has fewer than 2 usable samples inside the clip window (the caller
+    then falls back to the static center crop).
+
+    The source is scaled to cover the canvas with ``slack`` extra on each
+    side (15% by default) so the crop has room to pan; the crop window is
+    then centered on the smoothed face path. Face sample times are remapped
+    through the silence-condensed timeline (``cuts_rel``) so panning stays in
+    sync with the speech.
+    """
+    samples: list[tuple[float, float, float]] = []
+    for s in face_track:
+        t = s.get("t", 0.0)
+        if trim_start - 0.5 <= t <= trim_end + 0.5:
+            rel = _shift_time(t - trim_start, cuts_rel)
+            if rel < 0.0:
+                rel = 0.0
+            samples.append((rel, float(s.get("cx", 0.5)), float(s.get("cy", 0.5))))
+    if len(samples) < 2:
+        return None
+    samples.sort(key=lambda p: p[0])
+
+    # Cap sample count to keep the filter expression a manageable size.
+    if len(samples) > _MAX_CROP_SAMPLES:
+        stride = len(samples) / _MAX_CROP_SAMPLES
+        picked = [
+            samples[min(int(i * stride), len(samples) - 1)] for i in range(_MAX_CROP_SAMPLES)
+        ]
+        if picked[-1][0] < samples[-1][0]:
+            picked.append(samples[-1])
+        samples = picked
+
+    # Scale the source to cover the canvas plus slack; round to even dims.
+    f = max((canvas_w * slack) / src_w, (canvas_h * slack) / src_h)
+    scale_w = int(src_w * f / 2) * 2
+    scale_h = int(src_h * f / 2) * 2
+    max_x = max(scale_w - canvas_w, 0)
+    max_y = max(scale_h - canvas_h, 0)
+
+    # Crop position = face center in the scaled frame, clamped to the window.
+    pts: list[tuple[float, float, float]] = []
+    for rel, cx, cy in samples:
+        x = max(0.0, min(float(max_x), cx * scale_w - canvas_w / 2.0))
+        y = max(0.0, min(float(max_y), cy * scale_h - canvas_h / 2.0))
+        pts.append((rel, x, y))
+
+    return scale_w, scale_h, _lerp_expr(pts, 1), _lerp_expr(pts, 2)
+
+
 # ---------------------------------------------------------------------------
 # Main render entry point
 # ---------------------------------------------------------------------------
@@ -438,6 +561,7 @@ async def execute_render(
     burn_text: bool = False,
     apply_overlay: bool = True,
     trim_silence: bool = False,
+    face_track: list[dict] | None = None,
 ) -> list[str]:
     """Render each clip from source video using the template.
 
@@ -455,11 +579,18 @@ async def execute_render(
     only ever land BETWEEN words, so burned karaoke captions stay
     frame-accurate after the subtitle times are remapped.
 
+    When face_track is a non-empty normalized face track (list of
+    {"t", "cx", "cy"}, see face_track.detect_face_track), cover-mode clips
+    get an ANIMATED crop that pans to keep the speaker centered (Opus-style
+    auto face tracking); the crop falls back to the static center crop when
+    there's no track or no faces inside a clip's window.
+
     Template features:
       - Ken Burns subtle zoom on the main video slot
       - Color grading (brightness, contrast, saturation, gamma)
       - PNG overlay image per template (apply_overlay)
       - ASS subtitle overlay with emoji injection (burn_text only)
+      - Face-aware animated cover crop (cover-mode templates, face_track set)
     """
     RENDER_DIR.mkdir(parents=True, exist_ok=True)
     template = _load_template(template_id)
@@ -504,11 +635,27 @@ async def execute_render(
         # --- Build filter complex ---
         fit_mode = slot.get("fit_mode", "cover")
 
+        # Face-aware cover crop: animate x/y so the speaker stays centered.
+        # Falls back to None (static center crop) when there's no track or no
+        # faces inside this clip's window.
+        crop_plan = None
+        if fit_mode == "cover" and face_track:
+            src_dims = _probe_dimensions(video_path)
+            if src_dims:
+                crop_plan = _build_animated_crop(
+                    face_track, trim_start, trim_end, cuts_rel,
+                    src_dims[0], src_dims[1], width, height,
+                )
+
         # 0. Silence trimming: condense the timeline by cutting inter-word
         #    pauses. Builds [condv] via trimmed concat; the main chain then
         #    starts from [condv]. Audio is condensed the same way later.
+        #    NOTE: when video_src is a bare label ("[condv]") the next filter
+        #    must GLUE to it ("[condv]scale=...") — a comma after a label is
+        #    parsed as an empty filter ("No such filter: ''").
         chains: list[str] = []
         video_src = f"[0:v]trim={trim_start}:{trim_end},setpts=PTS-STARTPTS"
+        vs_sep = ","
         keeps: list[tuple[float, float]] = []
         if cuts:
             keeps = _keep_intervals(trim_start, trim_end, cuts)
@@ -520,21 +667,34 @@ async def execute_render(
                 f"[{']['.join(v_labels)}]concat=n={len(v_labels)}:v=1:a=0[condv]"
             )
             video_src = "[condv]"
+            vs_sep = ""
 
         # 1. Main video chain (with optional Ken Burns zoom)
         if fit_mode == "cover":
-            # Full-screen 9:16 reframe: scale the source to COVER the canvas,
-            # then center-crop. Works for any source aspect — a 9:16 source
-            # fills the screen exactly, a 16:9 source is cropped to fill.
-            main_chain = (
-                f"{video_src},"
-                f"scale={width}:{height}:force_original_aspect_ratio=increase,"
-                f"crop={width}:{height}"
-            )
+            if crop_plan:
+                # Face-aware: scale with slack, then pan a WxH window so the
+                # speaker stays centered. x/y are piecewise-linear expressions
+                # in clip time, single-quoted so the commas are literal.
+                scale_w, scale_h, x_expr, y_expr = crop_plan
+                main_chain = (
+                    f"{video_src}{vs_sep}"
+                    f"scale={scale_w}:{scale_h},"
+                    f"crop={width}:{height}:x='{x_expr}':y='{y_expr}'"
+                )
+            else:
+                # Full-screen 9:16 reframe: scale the source to COVER the
+                # canvas, then center-crop. Works for any source aspect — a
+                # 9:16 source fills the screen exactly, a 16:9 source is
+                # cropped to fill.
+                main_chain = (
+                    f"{video_src}{vs_sep}"
+                    f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+                    f"crop={width}:{height}"
+                )
         else:
             # Legacy "contain": centered video on a blurred background
             main_chain = (
-                f"{video_src},"
+                f"{video_src}{vs_sep}"
                 f"scale={sw}:{sh}:force_original_aspect_ratio=1,"
                 f"pad={sw}:{sh}:(ow-iw)/2:(oh-ih)/2"
             )
@@ -562,7 +722,7 @@ async def execute_render(
         post_label = "main"
         if fit_mode == "contain":
             bg_chain = (
-                f"{video_src},"
+                f"{video_src}{vs_sep}"
                 f"scale={width}:{height}:force_original_aspect_ratio=2,"
                 f"boxblur=5:2,"
                 f"crop=trunc(iw/2)*2:trunc(ih/2)*2[bg]"

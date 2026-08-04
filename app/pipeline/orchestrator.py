@@ -17,6 +17,7 @@ from app.pipeline.intelligence import (
     snap_clips_to_signals,
 )
 from app.pipeline.video_editor import execute_render
+from app.pipeline.face_track import detect_face_track
 from app.pipeline.seo_generator import execute_seo
 from app.storage import upload_to_r2
 
@@ -231,6 +232,14 @@ async def execute_pipeline(job_id: int):
         # Cheap FFmpeg "sight" probes: scene cuts, loud moments, dead air
         video_signals = await asyncio.to_thread(extract_video_signals, video_path)
 
+        # Face-aware crop: detect the speaker track ONCE, persist it on the
+        # Job, and reuse it for every render (pipeline, generate-more, trim).
+        # Empty track -> renders keep the static center crop.
+        face_track = await asyncio.to_thread(detect_face_track, video_path)
+        if face_track:
+            _update_job(job_id, face_track_json=json.dumps(face_track))
+            print(f"[pipeline] face track: {len(face_track)} samples saved")
+
         has_speech = len(_get_transcript_text(segments).strip()) >= 10
         content_type = classify_content(segments, video_signals)
         if has_speech:
@@ -277,7 +286,15 @@ async def execute_pipeline(job_id: int):
                 f"[pipeline] auto template -> {template_id} "
                 f"(content_type={content_type})"
             )
-        rendered_paths = await execute_render(video_path, clips, segments, template_id)
+        rendered_paths = await execute_render(
+            video_path,
+            clips,
+            segments,
+            template_id,
+            burn_text=job.burn_captions,
+            trim_silence=job.trim_silence,
+            face_track=face_track,
+        )
 
         # --- Phase 5: SEO & Upload (per clip) ---
         transcript_text = _get_transcript_text(segments)
@@ -422,6 +439,7 @@ async def generate_more_clips(job_id: int, count: int = 3):
 
         # Render new clips
         _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
+        face_track = json.loads(job.face_track_json) if job.face_track_json else None
         rendered_paths = await execute_render(
             tmp_video,
             clips,
@@ -429,6 +447,7 @@ async def generate_more_clips(job_id: int, count: int = 3):
             job.template_id,
             burn_text=job.burn_captions,
             trim_silence=job.trim_silence,
+            face_track=face_track,
         )
 
         # SEO + upload
@@ -595,6 +614,7 @@ async def trim_clip(clip_id: int, new_start: float, new_end: float):
 
         segments = json.loads(job_ref.transcript_json)
         tmp_video = await _resolve_source(job_id, job_ref)
+        face_track = json.loads(job_ref.face_track_json) if job_ref.face_track_json else None
         rendered_paths = await execute_render(
             tmp_video,
             [{"start": new_start, "end": new_end}],
@@ -602,6 +622,7 @@ async def trim_clip(clip_id: int, new_start: float, new_end: float):
             job_ref.template_id,
             burn_text=job_ref.burn_captions,
             trim_silence=job_ref.trim_silence,
+            face_track=face_track,
         )
         rendered_path = rendered_paths[0]
 
