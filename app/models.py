@@ -27,6 +27,7 @@ class Job(SQLModel, table=True):
     max_clips: int = Field(default=5)             # Max clips to generate
     preferred_height: Optional[int] = Field(default=720)  # Frame.io proxy height (0 = original)
     burn_captions: bool = Field(default=False)    # Burn animated word-level captions (karaoke, Opus-style)
+    trim_silence: bool = Field(default=False)     # Cut inter-word pauses >0.5s (punchier clips)
 
     status: str = Field(default=JobStatus.PENDING)
     progress_percentage: int = Field(default=0)

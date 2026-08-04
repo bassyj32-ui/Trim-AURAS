@@ -175,6 +175,80 @@ def _enrich_with_emojis(text: str) -> str:
 # ASS subtitle builder
 # ---------------------------------------------------------------------------
 
+def _compute_silence_cuts(
+    segments: list[dict[str, Any]],
+    clip_start: float,
+    clip_end: float,
+    threshold: float = 0.5,
+) -> list[tuple[float, float]]:
+    """Find silence ranges (absolute source time) to cut out of a clip.
+
+    Uses Whisper word timestamps: gaps >= ``threshold`` between consecutive
+    words are cut, plus leading/trailing dead air beyond the threshold.
+    Cuts only ever land BETWEEN words, so burned karaoke captions stay
+    frame-accurate once subtitle times are remapped (word ``\\k`` durations
+    are unchanged; only the timeline between words is shortened).
+
+    Returns [] when there's no word data or when cutting would leave the
+    clip shorter than ~1.2s (safety — don't shred the clip).
+    """
+    words: list[tuple[float, float]] = []
+    for seg in segments:
+        for w in seg.get("words") or []:
+            ws = float(w.get("start", 0) or 0)
+            we = float(w.get("end", 0) or ws)
+            if we > clip_start and ws < clip_end:
+                words.append((ws, we))
+    words.sort()
+    if len(words) < 2:
+        return []
+
+    cuts: list[tuple[float, float]] = []
+    first_s, first_e = words[0]
+    last_s, last_e = words[-1]
+
+    if first_s - clip_start >= threshold:
+        cuts.append((clip_start, first_s))
+    prev_e = first_e
+    for ws, we in words[1:]:
+        if ws - prev_e >= threshold:
+            cuts.append((prev_e, ws))
+        prev_e = we
+    if clip_end - last_e >= threshold:
+        cuts.append((last_e, clip_end))
+
+    keep = (clip_end - clip_start) - sum(ce - cs for cs, ce in cuts)
+    if keep < 1.2:
+        return []
+    return cuts
+
+
+def _keep_intervals(
+    clip_start: float, clip_end: float, cuts: list[tuple[float, float]]
+) -> list[tuple[float, float]]:
+    """Invert the cut ranges into the keep intervals (absolute source time)."""
+    intervals: list[tuple[float, float]] = []
+    cursor = clip_start
+    for cs, ce in cuts:
+        if cs > cursor:
+            intervals.append((cursor, cs))
+        cursor = ce
+    if cursor < clip_end:
+        intervals.append((cursor, clip_end))
+    return intervals
+
+
+def _shift_time(t: float, cuts: list[tuple[float, float]]) -> float:
+    """Map a clip-relative time into the silence-condensed timeline."""
+    out = t
+    for cs, ce in cuts:
+        if t >= ce:
+            out -= ce - cs
+        elif t > cs + 1e-9:
+            out = cs
+    return out
+
+
 def _build_karaoke_line(
     seg: dict[str, Any], clip_start: float, clip_end: float
 ) -> tuple[str | None, float, float]:
@@ -224,6 +298,7 @@ def _build_subtitle_file(
     sub_style: dict[str, Any],
     name: str = "subs",
     karaoke: bool = False,
+    cuts: list[tuple[float, float]] | None = None,
 ) -> str:
     """Create an ASS subtitle file in the render workspace.
 
@@ -232,7 +307,13 @@ def _build_subtitle_file(
     (Opus-style). Words come from each segment's ``words`` list (populated by
     the transcriber when Whisper returns word timestamps); segments without
     words fall back to plain text.
+
+    ``cuts`` is a list of clip-relative silence ranges that were removed from
+    the timeline (silence trimming); Dialogue times are remapped so captions
+    stay synced to the condensed clip. Karaoke ``\\k`` durations are left
+    untouched — cuts only land between words.
     """
+    cuts = cuts or []
     RENDER_DIR.mkdir(parents=True, exist_ok=True)
     ass_path = str(RENDER_DIR / f"{name}.ass")
 
@@ -296,6 +377,11 @@ def _build_subtitle_file(
             # Inject emojis into subtitle text
             safe_text = _enrich_with_emojis(text).replace("{", "\\{").replace("}", "\\}")
 
+        # Remap into the silence-condensed timeline (cuts only land between
+        # words, so karaoke \k durations stay intact).
+        rel_start = _shift_time(rel_start, cuts)
+        rel_end = _shift_time(rel_end, cuts)
+
         if rel_end - rel_start < 0.05:
             continue
 
@@ -351,6 +437,7 @@ async def execute_render(
     template_id: str,
     burn_text: bool = False,
     apply_overlay: bool = True,
+    trim_silence: bool = False,
 ) -> list[str]:
     """Render each clip from source video using the template.
 
@@ -362,6 +449,11 @@ async def execute_render(
     the clip stays text-free so any on-screen captions can be added by the
     user afterwards. When burn_text=True the template's ASS subtitles are
     applied on top of the overlay.
+
+    When trim_silence=True, inter-word pauses >= 0.5s (and leading/trailing
+    dead air) are cut out of each clip using Whisper word timestamps. Cuts
+    only ever land BETWEEN words, so burned karaoke captions stay
+    frame-accurate after the subtitle times are remapped.
 
     Template features:
       - Ken Burns subtle zoom on the main video slot
@@ -392,23 +484,42 @@ async def execute_render(
     for i, clip in enumerate(clips):
         out_path = str(RENDER_DIR / f"clip_{i}.mp4")
         sub_file = None
+        trim_start = clip["start"]
+        trim_end = clip["end"]
+        cuts = _compute_silence_cuts(segments, trim_start, trim_end) if trim_silence else []
+        cuts_rel = [(cs - trim_start, ce - trim_start) for cs, ce in cuts]
+        duration = (trim_end - trim_start) - sum(ce - cs for cs, ce in cuts)
         if burn_text:
             sub_file = _build_subtitle_file(
-                segments, clip["start"], clip["end"], sub_style, f"subs_{i}",
-                karaoke=burn_text,
+                segments, trim_start, trim_end, sub_style, f"subs_{i}",
+                karaoke=burn_text, cuts=cuts_rel,
             )
 
         width, height = canvas["width"], canvas["height"]
         sw, sh = slot["width"], slot["height"]
         sx, sy = slot["x_offset"], slot["y_offset"]
-        trim_start = clip["start"]
-        trim_end = clip["end"]
-        duration = trim_end - trim_start
 
         sub_escaped = _ffmpeg_escape_path(sub_file) if sub_file else None
 
         # --- Build filter complex ---
         fit_mode = slot.get("fit_mode", "cover")
+
+        # 0. Silence trimming: condense the timeline by cutting inter-word
+        #    pauses. Builds [condv] via trimmed concat; the main chain then
+        #    starts from [condv]. Audio is condensed the same way later.
+        chains: list[str] = []
+        video_src = f"[0:v]trim={trim_start}:{trim_end},setpts=PTS-STARTPTS"
+        keeps: list[tuple[float, float]] = []
+        if cuts:
+            keeps = _keep_intervals(trim_start, trim_end, cuts)
+            v_labels = []
+            for j, (ks, ke) in enumerate(keeps):
+                v_labels.append(f"kv{j}")
+                chains.append(f"[0:v]trim={ks}:{ke},setpts=PTS-STARTPTS[kv{j}]")
+            chains.append(
+                f"[{']['.join(v_labels)}]concat=n={len(v_labels)}:v=1:a=0[condv]"
+            )
+            video_src = "[condv]"
 
         # 1. Main video chain (with optional Ken Burns zoom)
         if fit_mode == "cover":
@@ -416,14 +527,14 @@ async def execute_render(
             # then center-crop. Works for any source aspect — a 9:16 source
             # fills the screen exactly, a 16:9 source is cropped to fill.
             main_chain = (
-                f"[0:v]trim={trim_start}:{trim_end},setpts=PTS-STARTPTS,"
+                f"{video_src},"
                 f"scale={width}:{height}:force_original_aspect_ratio=increase,"
                 f"crop={width}:{height}"
             )
         else:
             # Legacy "contain": centered video on a blurred background
             main_chain = (
-                f"[0:v]trim={trim_start}:{trim_end},setpts=PTS-STARTPTS,"
+                f"{video_src},"
                 f"scale={sw}:{sh}:force_original_aspect_ratio=1,"
                 f"pad={sw}:{sh}:(ow-iw)/2:(oh-ih)/2"
             )
@@ -447,11 +558,11 @@ async def execute_render(
         main_chain += "[main]"
 
         # 2. Background blur chain (contain mode only)
-        chains = [main_chain]
+        chains.append(main_chain)
         post_label = "main"
         if fit_mode == "contain":
             bg_chain = (
-                f"[0:v]trim={trim_start}:{trim_end},setpts=PTS-STARTPTS,"
+                f"{video_src},"
                 f"scale={width}:{height}:force_original_aspect_ratio=2,"
                 f"boxblur=5:2,"
                 f"crop=trunc(iw/2)*2:trunc(ih/2)*2[bg]"
@@ -494,11 +605,23 @@ async def execute_render(
         cmd = ["ffmpeg", "-i", video_path]
         next_input = 1
         audio_map = "0:a?"
+        has_audio = _has_audio_stream(video_path)
+        # Silence trimming: condense audio with the same keep intervals so
+        # audio and video stay in sync (no drift).
+        if cuts and has_audio:
+            a_labels = []
+            for j, (ks, ke) in enumerate(keeps):
+                a_labels.append(f"ka{j}")
+                chains.append(f"[0:a]atrim={ks}:{ke},asetpts=PTS-STARTPTS[ka{j}]")
+            chains.append(
+                f"[{']['.join(a_labels)}]concat=n={len(a_labels)}:v=0:a=1[conda]"
+            )
+            audio_map = "[conda]"
         if apply_overlay and overlay_path:
             cmd += ["-i", overlay_path]
             next_input += 1
         # YouTube rejects files with no audio track — add a silent track if needed
-        if not _has_audio_stream(video_path):
+        if not has_audio:
             cmd += ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"]
             audio_map = f"{next_input}:a"
         cmd += [

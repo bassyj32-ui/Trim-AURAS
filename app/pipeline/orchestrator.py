@@ -423,7 +423,12 @@ async def generate_more_clips(job_id: int, count: int = 3):
         # Render new clips
         _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
         rendered_paths = await execute_render(
-            tmp_video, clips, segments, job.template_id, burn_text=job.burn_captions
+            tmp_video,
+            clips,
+            segments,
+            job.template_id,
+            burn_text=job.burn_captions,
+            trim_silence=job.trim_silence,
         )
 
         # SEO + upload
@@ -551,3 +556,85 @@ def _get_job(job_id: int, retries: int = 5) -> Job:
         if attempt < retries - 1:
             time.sleep(2)
     raise ValueError(f"Job {job_id} not found after {retries} attempts")
+
+
+async def trim_clip(clip_id: int, new_start: float, new_end: float):
+    """Re-render a single clip with tightened boundaries.
+
+    No re-analysis or transcription: the job's saved source video + transcript
+    are reused, and the same template/burn/silence settings apply. The clip row
+    (start/end/duration) is updated in place so the frontend keeps the same
+    clip id. The job flips to RENDERING while the re-render runs so the
+    frontend's existing polling gives the user progress, then back to COMPLETED
+    (without a push notification — the job itself already finished).
+    """
+    rendered_path = None
+    tmp_video = None
+    job_id = None
+
+    try:
+        with Session(engine) as session:
+            clip = session.get(VideoClip, clip_id)
+            if not clip or clip.deleted:
+                raise ValueError(f"Clip {clip_id} not found")
+            job = session.get(Job, clip.job_id)
+            if not job:
+                raise ValueError(f"Job for clip {clip_id} not found")
+            if not job.transcript_json:
+                raise ValueError("Job has no saved transcript — cannot re-render clip")
+            if new_start < clip.start_time or new_end > clip.end_time:
+                raise ValueError(
+                    "New boundaries must be strictly inside the original clip"
+                )
+            if new_start >= new_end:
+                raise ValueError("start must be < end")
+            job_id = clip.job_id
+            job_ref = job  # detached read-only copy; all columns already loaded
+
+        _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
+
+        segments = json.loads(job_ref.transcript_json)
+        tmp_video = await _resolve_source(job_id, job_ref)
+        rendered_paths = await execute_render(
+            tmp_video,
+            [{"start": new_start, "end": new_end}],
+            segments,
+            job_ref.template_id,
+            burn_text=job_ref.burn_captions,
+            trim_silence=job_ref.trim_silence,
+        )
+        rendered_path = rendered_paths[0]
+
+        CLIPS_DIR.mkdir(parents=True, exist_ok=True)
+        clip_serve_path = CLIPS_DIR / f"{job_id}_{clip_id}.mp4"
+        import shutil
+        shutil.copy2(rendered_path, str(clip_serve_path))
+
+        with Session(engine) as session:
+            db_clip = session.get(VideoClip, clip_id)
+            if db_clip:
+                db_clip.start_time = new_start
+                db_clip.end_time = new_end
+                db_clip.duration = new_end - new_start
+                db_clip.r2_url = str(clip_serve_path)
+                session.add(db_clip)
+                session.commit()
+
+        # Restore the job to COMPLETED directly (bypassing _update_job so the
+        # trim doesn't fire a "ready" push notification for an already-finished job).
+        with Session(engine) as session:
+            db_job = session.get(Job, job_id)
+            if db_job:
+                db_job.status = JobStatus.COMPLETED
+                db_job.progress_percentage = 100
+                session.add(db_job)
+                session.commit()
+
+    except Exception as e:
+        if job_id is not None:
+            _update_job(job_id, status=JobStatus.FAILED, error_message=str(e))
+        raise
+
+    finally:
+        _cleanup_temp(tmp_video)
+        _cleanup_temp(rendered_path)

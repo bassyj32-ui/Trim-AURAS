@@ -287,6 +287,45 @@ def process_generate_more(job_id: int, count: int = 3):
         raise
 
 
+@app.function(timeout=600, **_PIPELINE_KWARGS)
+def process_trim_clip(clip_id: int, new_start: float, new_end: float):
+    """Re-render a single clip with tightened boundaries (worker).
+
+    Runs ``trim_clip`` (source + transcript reuse, no re-analysis) and
+    commits the Volume so the web container can serve the updated file.
+    """
+    job_id = None
+    try:
+        _ensure_path()
+
+        from app.database import engine, init_db
+
+        init_db()
+
+        # Resolve job_id from the clip so status files stay consistent.
+        from sqlmodel import Session
+        from app.models import VideoClip
+
+        with Session(engine) as session:
+            clip = session.get(VideoClip, clip_id)
+            if clip:
+                job_id = clip.job_id
+        if job_id is not None:
+            _write_status(job_id, "RENDERING", 60)
+
+        import asyncio
+        from app.pipeline.orchestrator import trim_clip
+
+        asyncio.run(trim_clip(clip_id, new_start, new_end))
+        if job_id is not None:
+            _sync_clips_to_volume(job_id)
+            _write_status(job_id, "COMPLETED", 100)
+    except Exception as exc:
+        if job_id is not None:
+            _write_status(job_id, "FAILED", 0, str(exc))
+        raise
+
+
 def _sync_clips_to_volume(job_id: int):
     """Copy locally-rendered clips to the Volume so they can be served
     by the `/api/clips/{id}/download` endpoint."""

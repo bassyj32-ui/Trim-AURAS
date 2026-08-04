@@ -19,6 +19,7 @@ from app.pipeline.orchestrator import (
     generate_more_clips,
     refresh_clip_seo,
     save_job_cookies,
+    trim_clip,
 )
 from app.storage import generate_presigned_url
 
@@ -43,6 +44,11 @@ if MODAL:
             "trimaura", "process_generate_more"
         ).spawn.aio(job_id, count)
 
+    async def _dispatch_trim_clip(clip_id: int, new_start: float, new_end: float):
+        await _modal.Function.from_name("trimaura", "process_trim_clip").spawn.aio(
+            clip_id, new_start, new_end
+        )
+
 else:
 
     async def _dispatch_pipeline(job_id: int, job_data: dict | None = None):
@@ -50,6 +56,9 @@ else:
 
     async def _dispatch_generate_more(job_id: int, count: int = 3):
         asyncio.create_task(generate_more_clips(job_id, count=count))
+
+    async def _dispatch_trim_clip(clip_id: int, new_start: float, new_end: float):
+        asyncio.create_task(trim_clip(clip_id, new_start, new_end))
 
 
 # --- Schemas ---
@@ -63,6 +72,12 @@ class CreateJobRequest(BaseModel):
     preferred_height: Optional[int] = 1080  # Caps download/Frame.io proxy height; 0 = original file
     cookies: Optional[str] = None  # Netscape cookies.txt content (for login-walled / bot-blocked sources)
     burn_captions: bool = False  # Burn animated word-level captions (karaoke, Opus-style)
+    trim_silence: bool = False  # Cut inter-word pauses >0.5s for punchier clips
+
+
+class TrimClipRequest(BaseModel):
+    start: float  # New clip boundary in source-video seconds (tightened only)
+    end: float
 
 
 class CreateJobResponse(BaseModel):
@@ -122,6 +137,7 @@ async def create_job(body: CreateJobRequest):
             max_clips=body.max_clips,
             preferred_height=body.preferred_height,
             burn_captions=body.burn_captions,
+            trim_silence=body.trim_silence,
         )
         session.add(job)
         session.commit()
@@ -151,6 +167,8 @@ async def create_job(body: CreateJobRequest):
         "max_clips": body.max_clips,
         "preferred_height": body.preferred_height if body.preferred_height is not None else 0,
         "cookies": body.cookies or "",
+        "burn_captions": body.burn_captions,
+        "trim_silence": body.trim_silence,
         "status": JobStatus.PENDING,
     }
     await _dispatch_pipeline(job_id, job_payload)
@@ -430,6 +448,40 @@ def toggle_posted(clip_id: int, body: TogglePostedRequest):
         session.add(clip)
         session.commit()
         return {"clip_id": clip_id, "platform": platform, "posted_platforms": posted}
+
+
+@router.post("/clips/{clip_id}/trim", status_code=202)
+async def api_trim_clip(clip_id: int, body: TrimClipRequest):
+    """Tighten a rendered clip's boundaries and re-render from the source.
+
+    New bounds must be strictly inside the clip's original start/end (the
+    clip can only get shorter, never longer). The worker re-renders with the
+    job's saved source + transcript and updates the clip row in place.
+    """
+    if body.start >= body.end:
+        raise HTTPException(400, "start must be < end")
+    with Session(engine) as session:
+        clip = session.get(VideoClip, clip_id)
+        if not clip or clip.deleted:
+            raise HTTPException(404, "Clip not found")
+        if body.start < clip.start_time or body.end > clip.end_time:
+            raise HTTPException(
+                400,
+                f"New boundaries must be inside the original clip "
+                f"({clip.start_time:.2f}s–{clip.end_time:.2f}s)",
+            )
+        original_start, original_end = clip.start_time, clip.end_time
+
+    await _dispatch_trim_clip(clip_id, body.start, body.end)
+
+    return {
+        "clip_id": clip_id,
+        "status": "processing",
+        "message": (
+            f"Re-rendering clip from {body.start:.2f}s to {body.end:.2f}s "
+            f"(original {original_start:.2f}s–{original_end:.2f}s)."
+        ),
+    }
 
 
 @router.get("/clips/{clip_id}/download")

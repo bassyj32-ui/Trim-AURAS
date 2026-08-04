@@ -1,0 +1,1 @@
+ALTER TABLE job ADD COLUMN IF NOT EXISTS trim_silence boolean NOT NULL DEFAULT false;

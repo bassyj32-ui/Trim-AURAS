@@ -121,6 +121,21 @@
       <button class="btn-small btn-outline" id="refreshSeoBtn">Refresh SEO</button>
       <button class="btn-small btn-outline" id="downloadBtn">Download MP4</button>
     </div>
+    <div id="trimSection" style="margin-top:18px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="font-size:13px;font-weight:700;">Trim Clip</div>
+        <button class="btn-small btn-primary" id="saveTrimBtn" style="padding:6px 14px;">Save Trim</button>
+      </div>
+      <label style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--ink-dim);margin-bottom:2px;">
+        <span>Start</span><span id="trimStartLabel" style="font-weight:700;color:var(--ink);"></span>
+      </label>
+      <input type="range" id="trimStartSlider" min="0" max="100" value="0" step="0.5" style="width:100%;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;">
+      <label style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--ink-dim);margin:10px 0 2px;">
+        <span>End</span><span id="trimEndLabel" style="font-weight:700;color:var(--ink);"></span>
+      </label>
+      <input type="range" id="trimEndSlider" min="0" max="100" value="100" step="0.5" style="width:100%;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;">
+      <div id="trimStatus" style="font-size:10px;color:var(--ink-dim);margin-top:6px;line-height:1.4;"></div>
+    </div>
     <div style="margin-top:18px;">
       <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Publish</div>
       <div id="publishRow" style="display:flex;flex-direction:column;gap:8px;"></div>
@@ -222,6 +237,7 @@ let campaignRules = '';
 let maxClips = 5;
 let preferredHeight = 1080;
 let burnCaptions = localStorage.getItem('trimaura_burn_captions') === '1';
+let trimSilence = localStorage.getItem('trimaura_trim_silence') === '1';
 let myLink = localStorage.getItem('trimaura_link') || '';
 let cookiesText = localStorage.getItem('trimaura_cookies') || '';  // restored on reload
 let currentResultsJobId = null;
@@ -275,6 +291,12 @@ const drawerMeta = document.getElementById('drawerMeta');
 const copyPostBtn = document.getElementById('copyPostBtn');
 const refreshSeoBtn = document.getElementById('refreshSeoBtn');
 const downloadBtn = document.getElementById('downloadBtn');
+const trimStartSlider = document.getElementById('trimStartSlider');
+const trimEndSlider = document.getElementById('trimEndSlider');
+const trimStartLabel = document.getElementById('trimStartLabel');
+const trimEndLabel = document.getElementById('trimEndLabel');
+const trimStatus = document.getElementById('trimStatus');
+const saveTrimBtn = document.getElementById('saveTrimBtn');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
 const toast = document.getElementById('toast');
 const settingsBtn = document.getElementById('settingsBtn');
@@ -339,6 +361,7 @@ function openSettings() {
   maxClipsValue.textContent = maxClips;
   frameioQualitySelect.value = String(preferredHeight);
   burnCaptionsToggle.checked = burnCaptions;
+  trimSilenceToggle.checked = trimSilence;
   linkInput.value = myLink;
   settingsOverlay.classList.add('open');
   settingsPanel.classList.add('open');
@@ -660,6 +683,7 @@ generateBtn.addEventListener('click', async () => {
           max_clips: maxClips,
           preferred_height: preferredHeight,
           burn_captions: burnCaptions,
+          trim_silence: trimSilence,
           cookies: cookiesText || null
         })
       });
@@ -774,7 +798,149 @@ function showClip(clip) {
   drawerTitle.textContent = clip.titles?.curiosity || clip.description || 'Clip ' + clip.clip_id;
   drawerMeta.textContent = (clip.viral_score != null ? 'Score ' + clip.viral_score + '/100 · ' : '') + (clip.duration || '0') + 's' + (clip.hashtags ? ' · ' + clip.hashtags : '');
   downloadBtn.onclick = () => downloadSingleClip(clip.clip_id);
+  initTrimControls(clip);
   renderPublishPanel();
+}
+
+// --- Trim Clip ---
+function initTrimControls(clip) {
+  const start = clip.start_time || 0;
+  const end = clip.end_time || 0;
+  trimCtx = { start, end };
+  trimStartSlider.value = 0;
+  trimEndSlider.value = 100;
+  saveTrimBtn.disabled = false;
+  saveTrimBtn.textContent = 'Save Trim';
+  trimStatus.textContent = 'Original: ' + start.toFixed(1) + 's – ' + end.toFixed(1) + 's. Drag to cut dead air — the clip can only get shorter.';
+  updateTrimLabels();
+}
+
+function trimValues() {
+  const d = Math.max((trimCtx.end - trimCtx.start), 1);
+  const newStart = trimCtx.start + d * (parseFloat(trimStartSlider.value) / 100);
+  const newEnd = trimCtx.start + d * (parseFloat(trimEndSlider.value) / 100);
+  return { newStart, newEnd };
+}
+
+function updateTrimLabels() {
+  const { newStart, newEnd } = trimValues();
+  trimStartLabel.textContent = newStart.toFixed(1) + 's';
+  trimEndLabel.textContent = newEnd.toFixed(1) + 's';
+}
+
+trimStartSlider.addEventListener('input', () => {
+  if (parseFloat(trimStartSlider.value) > parseFloat(trimEndSlider.value)) {
+    trimStartSlider.value = trimEndSlider.value;
+  }
+  updateTrimLabels();
+});
+
+trimEndSlider.addEventListener('input', () => {
+  if (parseFloat(trimEndSlider.value) < parseFloat(trimStartSlider.value)) {
+    trimEndSlider.value = trimStartSlider.value;
+  }
+  updateTrimLabels();
+});
+
+saveTrimBtn.addEventListener('click', async () => {
+  if (!selectedClip || !trimCtx) return;
+  const { newStart, newEnd } = trimValues();
+  const minLen = 1;
+  if (newEnd - newStart < minLen) {
+    showToast('Clip too short — keep at least ' + minLen + 's');
+    return;
+  }
+  // Sliders are clamped to the original bounds, so newStart >= start
+  // and newEnd <= end by construction; enforce anyway for safety.
+  if (newStart < trimCtx.start - 0.05 || newEnd > trimCtx.end + 0.05) {
+    showToast('Trim can only shorten the clip');
+    return;
+  }
+  const clipId = selectedClip.clip_id;
+  saveTrimBtn.disabled = true;
+  saveTrimBtn.textContent = 'Rendering...';
+  trimStatus.textContent = 'Re-rendering clip from the source video — this takes a moment...';
+  try {
+    const res = await fetch(`/api/clips/${clipId}/trim`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start: newStart, end: newEnd })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.detail || 'Trim failed');
+      saveTrimBtn.disabled = false;
+      saveTrimBtn.textContent = 'Save Trim';
+      trimStatus.textContent = '';
+      return;
+    }
+    showToast('Trimming clip...');
+    await waitForTrimDone(clipId);
+  } catch (e) {
+    showToast('Trim request failed');
+    saveTrimBtn.disabled = false;
+    saveTrimBtn.textContent = 'Save Trim';
+    trimStatus.textContent = '';
+  }
+});
+
+function waitForTrimDone(clipId) {
+  return new Promise((resolve) => {
+    if (!drawerJobId) { resolve(); return; }
+    let seenRendering = false;
+    let elapsed = 0;
+    const timer = setInterval(async () => {
+      elapsed += 1500;
+      if (elapsed > 150000) { // 2.5 min safety cap
+        clearInterval(timer);
+        trimStatus.textContent = 'Trim timed out — check the clip again shortly.';
+        saveTrimBtn.disabled = false;
+        saveTrimBtn.textContent = 'Save Trim';
+        showToast('Trim timed out');
+        resolve();
+        return;
+      }
+      try {
+        const res = await fetch(`/api/jobs/${drawerJobId}/poll`);
+        const data = await res.json();
+        if (data.status === 'RENDERING') seenRendering = true;
+        if (data.status === 'FAILED') {
+          clearInterval(timer);
+          trimStatus.textContent = 'Trim failed: ' + (data.error || 'Unknown error');
+          saveTrimBtn.disabled = false;
+          saveTrimBtn.textContent = 'Save Trim';
+          showToast('Trim failed');
+          resolve();
+          return;
+        }
+        // Ignore the initial COMPLETED (worker hasn't started yet); only
+        // finish once we saw RENDERING and the job returned to COMPLETED.
+        if (data.status === 'COMPLETED' && seenRendering) {
+          clearInterval(timer);
+          await refreshDrawerClip(clipId);
+          showToast('Clip trimmed & re-rendered!');
+          resolve();
+        }
+      } catch (e) { /* keep polling */ }
+    }, 1500);
+  });
+}
+
+async function refreshDrawerClip(clipId) {
+  try {
+    const res = await fetch(`/api/jobs/${drawerJobId}`);
+    const job = await res.json();
+    drawerClips = job.clips || drawerClips;
+    const idx = drawerClips.findIndex(c => c.clip_id === clipId);
+    if (idx >= 0) {
+      drawerClipIndex = idx;
+      selectedClip = drawerClips[idx];
+      renderClipNav();
+      showClip(selectedClip);
+    }
+    if (currentResultsJobId) renderResults(currentResultsJobId);
+    loadHistory();
+  } catch (e) { /* non-fatal */ }
 }
 
 drawerOverlay.addEventListener('click', closeDrawer);
