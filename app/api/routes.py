@@ -197,6 +197,7 @@ async def upload_job(
     template_id: str = "auto",
     campaign_rules: Optional[str] = Form(None),
     max_clips: int = Form(5),
+    burn_captions: Optional[str] = Form(None),
 ):
     suffix = Path(file.filename).suffix if file.filename else ".mp4"
     upload_dir = Path("/mnt/data/uploads")

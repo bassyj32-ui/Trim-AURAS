@@ -804,16 +804,58 @@ async def execute_render(
 
         import asyncio
 
-        result = await asyncio.to_thread(
-            subprocess.run, cmd, capture_output=True, text=True
+        # --- Diag instrumentation (evidence only — no behavior change) ---
+        # Log the exact ffmpeg version + full filter string so Modal (5.1)
+        # can be diffed against local (8.x) directly.
+        try:
+            ver = subprocess.run(
+                ["ffmpeg", "-version"], capture_output=True, text=True, timeout=10
+            ).stdout.splitlines()[0]
+        except Exception:
+            ver = "ffmpeg version: unknown"
+        print(f"[render] ffmpeg: {ver}", flush=True)
+        print(f"[render] filter_complex[{len(filter_complex)} chars]: {filter_complex}", flush=True)
+        print(f"[render] cmd: {' '.join(cmd)}", flush=True)
+
+        # Stream ffmpeg stderr live to a persisted log file (survives on the
+        # /mnt/data Volume on Modal) + console, so a stalled render shows
+        # partial output instead of nothing until it finishes or times out.
+        diag_dir = (
+            Path("/mnt/data/diag")
+            if (os.name == "posix" and os.path.isdir("/mnt/data"))
+            else RENDER_DIR
         )
-        if result.returncode != 0:
+        diag_dir.mkdir(parents=True, exist_ok=True)
+        stderr_log = diag_dir / (Path(out_path).stem + ".stderr.log")
+
+        def _run_streamed() -> tuple[int, list[str]]:
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+            )
+            seen: list[str] = []
+            with stderr_log.open("w", encoding="utf-8") as lf:
+                lf.write(f"# {ver}\n# {filter_complex}\n")
+                lf.flush()
+                assert proc.stderr is not None
+                for line in proc.stderr:
+                    line = line.rstrip()
+                    if not line:
+                        continue
+                    lf.write(line + "\n")
+                    lf.flush()
+                    seen.append(line)
+                    print(f"[render-stderr] {line}", flush=True)
+            proc.wait()
+            return proc.returncode, seen
+
+        returncode, stderr_lines = await asyncio.to_thread(_run_streamed)
+        if returncode != 0:
             error_lines = [
-                l for l in result.stderr.split("\n") if "error" in l.lower() or "Error" in l
+                l for l in stderr_lines if "error" in l.lower() or "Error" in l
             ]
-            detail = "; ".join(error_lines[-5:]) if error_lines else result.stderr[-1000:]
+            detail = "; ".join(error_lines[-5:]) if error_lines else "".join(stderr_lines)[-1000:]
             raise RuntimeError(
-                f"FFmpeg failed (exit {result.returncode}): {detail}"
+                f"FFmpeg failed (exit {returncode}): {detail}"
             )
 
         if sub_file and os.path.exists(sub_file):
