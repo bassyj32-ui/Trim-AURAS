@@ -1,6 +1,7 @@
 import asyncio
 import json
 import uuid
+from collections import Counter
 from pathlib import Path
 from typing import Optional
 
@@ -335,6 +336,17 @@ def list_jobs():
         jobs = session.exec(
             select(Job).order_by(Job.created_at.desc())
         ).all()
+        # Avoid the N+1: count all non-deleted clips in ONE query instead of
+        # touching j.clips (lazy load) for every job.
+        clip_counts = {}
+        if jobs:
+            rows = session.exec(
+                select(VideoClip.job_id).where(
+                    VideoClip.deleted == False,  # noqa: E712
+                    VideoClip.job_id.in_([j.id for j in jobs]),
+                )
+            ).all()
+            clip_counts = dict(Counter(rows))
         return [
             {
                 "job_id": j.id,
@@ -342,7 +354,7 @@ def list_jobs():
                 "template_id": j.template_id,
                 "status": j.status,
                 "created_at": j.created_at.isoformat(),
-                "clips_count": len([c for c in j.clips if not c.deleted]),
+                "clips_count": clip_counts.get(j.id, 0),
             }
             for j in jobs
         ]
