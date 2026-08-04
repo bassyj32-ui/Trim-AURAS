@@ -70,7 +70,7 @@ image = (
         # Face-aware crop: OpenCV Haar cascades (bundled with the wheel) — no
         # model downloads, no fragile mediapipe build on Python 3.13. The
         # mediapipe path in face_track.py only activates if it's importable.
-        "opencv-python-headless>=4.10.0",
+        "opencv-python-headless==4.13.0.92",
     )
     .env({"MODAL": "1"})
     .add_local_dir("./app", remote_path="/root/app", copy=True)
