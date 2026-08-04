@@ -32,10 +32,29 @@ data_volume = modal.Volume.from_name("trimaura-data", create_if_missing=True)
 # ---------------------------------------------------------------------------
 image = (
     modal.Image.debian_slim(python_version="3.13")
-    .apt_install("ffmpeg", "curl", "unzip", "ca-certificates")
-    # yt-dlp 2026+ requires a JS runtime for YouTube extraction; deno is the
-    # only runtime enabled by default and is auto-detected from PATH.
+    # NOTE: ffmpeg is intentionally NOT apt-installed. Debian bookworm's apt
+    # ffmpeg resolves to 5.1.9, which HANGS on the face-aware piecewise crop
+    # filter chain (crop=1080:1920:x='lt(t,...)*...+...') for 16:9 sources —
+    # job 86 froze at frame 248 while the same chain renders fine locally on
+    # gyan.dev 8.1.2 (38.6s) and on Modal for 9:16 simple-crop chains. We pin
+    # an immutable BtbN static 8.1.2 build (release branch, dated autobuild)
+    # with its SHA256 so an image rebuild can never silently drift back to a
+    # broken apt version (same discipline as the yt-dlp/groq/opencv pins below).
+    .apt_install("curl", "unzip", "xz-utils", "ca-certificates")
     .run_commands(
+        # ffmpeg PIN: 8.1.2 (BtbN static, linux64-gpl) — matches local gyan.dev
+        # 8.1.2 that renders the piecewise face-crop chain in 38.6s.
+        # Asset: ffmpeg-n8.1.2-21-gce3c09c101-linux64-gpl-8.1.tar.xz
+        # SHA256 pinned from the autobuild-2026-06-30-13-34 checksums file.
+        "curl -fsSL -o /tmp/ffmpeg.tar.xz https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-06-30-13-34/ffmpeg-n8.1.2-21-gce3c09c101-linux64-gpl-8.1.tar.xz",
+        "echo '0ba73bbd93472c7622f6dec26d334c5e62e64d858d072490b2844320970456cd  /tmp/ffmpeg.tar.xz' | sha256sum -c -",
+        "mkdir -p /tmp/ffmpeg && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg --strip-components=1",
+        "mv /tmp/ffmpeg/bin/ffmpeg /usr/local/bin/ffmpeg",
+        "mv /tmp/ffmpeg/bin/ffprobe /usr/local/bin/ffprobe",
+        "rm -rf /tmp/ffmpeg /tmp/ffmpeg.tar.xz",
+        "ffmpeg -version | head -n 1",
+        # yt-dlp 2026+ requires a JS runtime for YouTube extraction; deno is the
+        # only runtime enabled by default and is auto-detected from PATH.
         "curl -fsSL -o /usr/local/bin/deno.zip https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip",
         "unzip -o /usr/local/bin/deno.zip -d /usr/local/bin/ && rm -f /usr/local/bin/deno.zip",
         # PO-token (proof-of-origin) provider — single Rust binary, no deps.
@@ -365,6 +384,26 @@ def _sync_clips_to_volume(job_id: int):
 # ===========================================================================
 # 3. Debug probe — verify deno + cookies work inside the DEPLOYED image
 # ===========================================================================
+@app.function(timeout=60, image=image, volumes={DATA_DIR: data_volume})
+def ffmpeg_probe() -> str:
+    """Print the exact ffmpeg version baked into the deployed image (pin check).
+
+    Also writes it to the Volume as ffmpeg_probe.txt so it survives terminal
+    output-swallowing. Run via:  modal run modal_app.py::ffmpeg_probe
+    """
+    import subprocess
+
+    out = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
+    lines = out.stdout.splitlines()
+    result = f"{lines[0]} | {lines[1] if len(lines) > 1 else ''}" if lines else f"ffmpeg MISSING: {out.stderr[:300]}"
+    try:
+        Path(f"{DATA_DIR}/ffmpeg_probe.txt").write_text(result)
+        data_volume.commit()
+    except Exception as e:
+        result += f" (volume write failed: {e})"
+    return result
+
+
 @app.function(timeout=600, image=image, volumes={DATA_DIR: data_volume}, secrets=[
     modal.Secret.from_name("trimaura-secrets-v2"),
     modal.Secret.from_name("trimaura-supabase-keys"),

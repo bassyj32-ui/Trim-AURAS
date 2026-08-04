@@ -18,8 +18,9 @@ from pathlib import Path
 import httpx
 
 BASE = "https://bassyj32--trimaura-fastapi-app.modal.run"
-VID = Path("tmp") / "diag" / "videos"
-RESULTS = Path("tmp") / "diag_results.jsonl"
+ROOT = Path(__file__).resolve().parent.parent
+VID = ROOT / "tmp" / "diag" / "videos"
+RESULTS = ROOT / "tmp" / "diag_results.jsonl"
 
 UPLOAD_ROWS = [  # order matters: small->large so the big uploads run last
     {"video": "v01_small_h264_720p_40s.mp4"},
@@ -41,7 +42,7 @@ URL_ROWS = [
 
 
 def manifest() -> dict:
-    p = Path("tmp") / "diag_matrix.json"
+    p = ROOT / "tmp" / "diag_matrix.json"
     if p.exists():
         return {m["video"]: m for m in json.loads(p.read_text(encoding="utf-8"))}
     return {}
