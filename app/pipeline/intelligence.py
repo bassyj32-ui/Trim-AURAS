@@ -65,7 +65,10 @@ async def execute_analyze(
         "temperature": 0.4,
     }
 
-    async with AsyncClient(timeout=60) as client:
+    # DeepSeek on a full multi-minute transcript routinely takes 30-90s under
+    # Modal load; 60s caused ReadTimeouts that failed jobs at the ANALYZING
+    # stage. 300s gives ~5x headroom (tenacity retries add ~70s on top).
+    async with AsyncClient(timeout=300) as client:
         resp = await client.post(
             "https://api.deepseek.com/v1/chat/completions",
             headers={"Authorization": f"Bearer {settings.deepseek_api_key}", "Content-Type": "application/json"},

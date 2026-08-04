@@ -49,9 +49,13 @@ image = (
         "uvicorn[standard]>=0.30.0",
         "sqlmodel>=0.0.22",
         "boto3>=1.35.0",
-        "groq>=0.9.0",
+        # Pinned to exact versions verified against this codebase: loose pins
+        # silently resolved to breaking majors at image rebuild (yt-dlp 2026
+        # changed ImpersonateTarget, groq 1.6 changed segments to null, and
+        # opencv 5.0 dropped CascadeClassifier + bundled Haar cascades).
+        "groq==1.6.0",
         "openai>=1.0.0",
-        "yt-dlp>=2024.12.0",
+        "yt-dlp==2026.7.4",
         "curl_cffi>=0.14.0,<0.16",
         # yt-dlp POT provider plugin (auto-registers bgutil:http provider)
         "bgutil-ytdlp-pot-provider>=1.3.0",
