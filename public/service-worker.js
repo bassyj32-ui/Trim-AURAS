@@ -1,6 +1,7 @@
-const CACHE = "trimaura-v7";
+const CACHE = "trimaura-v8";
 const STATIC_ASSETS = [
   "/",
+  "/clip.html",
   "/manifest.json",
   "/styles.css",
   "/icon-192.png",

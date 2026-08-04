@@ -119,6 +119,8 @@
     <div class="drawer-actions">
       <button class="btn-small btn-primary" id="copyPostBtn">Copy Post Text</button>
       <button class="btn-small btn-outline" id="refreshSeoBtn">Refresh SEO</button>
+      <button class="btn-small btn-outline" id="openPlayerBtn">Open Player</button>
+      <button class="btn-small btn-outline" id="copyLinkBtn">Copy Link</button>
       <button class="btn-small btn-outline" id="downloadBtn">Download MP4</button>
     </div>
     <div id="trimSection" style="margin-top:18px;">
@@ -290,6 +292,8 @@ const drawerTitle = document.getElementById('drawerTitle');
 const drawerMeta = document.getElementById('drawerMeta');
 const copyPostBtn = document.getElementById('copyPostBtn');
 const refreshSeoBtn = document.getElementById('refreshSeoBtn');
+const openPlayerBtn = document.getElementById('openPlayerBtn');
+const copyLinkBtn = document.getElementById('copyLinkBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const trimStartSlider = document.getElementById('trimStartSlider');
 const trimEndSlider = document.getElementById('trimEndSlider');
@@ -798,6 +802,14 @@ function showClip(clip) {
   drawerTitle.textContent = clip.titles?.curiosity || clip.description || 'Clip ' + clip.clip_id;
   drawerMeta.textContent = (clip.viral_score != null ? 'Score ' + clip.viral_score + '/100 · ' : '') + (clip.duration || '0') + 's' + (clip.hashtags ? ' · ' + clip.hashtags : '');
   downloadBtn.onclick = () => downloadSingleClip(clip.clip_id);
+  openPlayerBtn.onclick = () => window.open(`/clip.html?id=${clip.clip_id}`, '_blank');
+  copyLinkBtn.onclick = () => {
+    const url = `${location.origin}/clip.html?id=${clip.clip_id}`;
+    navigator.clipboard.writeText(url).then(
+      () => showToast('Clip link copied'),
+      () => showToast('Copy failed — long-press the player link instead')
+    );
+  };
   initTrimControls(clip);
   renderPublishPanel();
 }
