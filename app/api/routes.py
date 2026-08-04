@@ -312,6 +312,64 @@ def poll_job_status(job_id: int):
         }
 
 
+@router.get("/jobs/{job_id}/diag")
+def job_diag(job_id: int):
+    """Stage-level diagnostics for a job (diagnostic suite).
+
+    Returns the timestamped event log written by the pipeline orchestrator
+    (see app/pipeline/orchestrator.py `_diag`) plus a per-stage breakdown
+    (entered/exited timestamps, ok, duration_s, error). On Modal the log
+    lives on the shared Volume; on local dev it's tmp/diag/job_{id}_diag.jsonl.
+    """
+    with Session(engine) as session:
+        job = session.get(Job, job_id)
+        if not job:
+            raise HTTPException(404, "Job not found")
+        base = {
+            "job_id": job.id,
+            "status": job.status,
+            "error": job.error_message,
+            "created_at": job.created_at.isoformat() if job.created_at else None,
+            "source_url": (job.source_url or "")[:160],
+            "source_type": job.source_type or "",
+        }
+
+    if MODAL:
+        try:
+            import modal as _m
+
+            _m.Volume.from_name("trimaura-data").reload()
+        except Exception:
+            pass
+        path = Path("/mnt/data/diag") / f"job_{job_id}_diag.jsonl"
+    else:
+        path = Path("tmp") / "diag" / f"job_{job_id}_diag.jsonl"
+
+    events = []
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                events.append(json.loads(line))
+            except Exception:
+                pass
+
+    stages: dict[str, dict] = {}
+    for ev in events:
+        name = ev.get("stage")
+        if not name:
+            continue
+        s = stages.setdefault(name, {})
+        if ev.get("event") == "STAGE_ENTER":
+            s["entered_at"] = ev["ts"]
+        elif ev.get("event") == "STAGE_EXIT":
+            s["exited_at"] = ev["ts"]
+            s["ok"] = ev.get("ok")
+            s["duration_s"] = ev.get("duration_s")
+            s["error"] = ev.get("error")
+
+    return {**base, "events": events, "stages": stages}
+
+
 @router.get("/jobs/{job_id}/stream")
 def stream_job(job_id: int):
     with Session(engine) as session:

@@ -1,5 +1,8 @@
 import json
 import os
+import time
+import traceback
+from datetime import datetime, timezone
 from pathlib import Path
 from sqlmodel import Session, select
 
@@ -27,6 +30,82 @@ CLIPS_DIR = Path("/mnt/data/clips")
 # Cookies.txt per job (Netscape format). On Modal this lives on the shared
 # Volume so any worker (pipeline OR generate-more) can re-download with it.
 COOKIES_DIR = Path("/mnt/data/cookies") if MODAL else Path("tmp") / "cookies"
+
+# ---- Diagnostics (stage-level instrumentation) ----
+# Each job appends JSONL events to {DIAG_DIR}/job_{id}_diag.jsonl with
+# timestamps, so stage entry/exit + duration + failure stage can be pulled
+# after the fact via GET /api/jobs/{id}/diag. On Modal this lives on the
+# shared Volume so the web container can read it.
+DIAG_DIR = Path("/mnt/data/diag") if MODAL else Path("tmp") / "diag"
+
+
+def _diag(job_id: int, event: str, **extra):
+    """Append a timestamped JSONL diagnostic event for a job.
+
+    Non-fatal by design: diagnostics must never take down a job. On Modal the
+    file lands on the shared Volume (committed fire-and-forget) so the web
+    container's /api/jobs/{id}/diag endpoint can serve it.
+    """
+    try:
+        DIAG_DIR.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "job_id": job_id,
+            "event": event,
+            "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        }
+        entry.update(extra)
+        with open(DIAG_DIR / f"job_{job_id}_diag.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, default=str) + "\n")
+    except Exception as e:
+        print(f"[diag] write failed (non-fatal): {e}")
+
+    if MODAL:
+        try:
+            import threading
+
+            threading.Thread(target=_diag_commit, daemon=True).start()
+        except Exception:
+            pass
+
+
+def _diag_commit():
+    try:
+        import modal
+
+        modal.Volume.from_name("trimaura-data").commit()
+    except Exception as e:
+        print(f"[diag] volume commit failed (non-fatal): {e}")
+
+
+_ACTIVE_STAGE: dict[int, str] = {}
+
+
+class _Stage:
+    """Context manager that records STAGE_ENTER/STAGE_EXIT diag events and
+    tracks the currently-active stage so a failure logs the exact stage."""
+
+    def __init__(self, job_id: int, name: str):
+        self.job_id = job_id
+        self.name = name
+        self.t0 = 0.0
+
+    def __enter__(self):
+        self.t0 = time.monotonic()
+        _ACTIVE_STAGE[self.job_id] = self.name
+        _diag(self.job_id, "STAGE_ENTER", stage=self.name)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        _ACTIVE_STAGE.pop(self.job_id, None)
+        _diag(
+            self.job_id,
+            "STAGE_EXIT",
+            stage=self.name,
+            ok=exc_type is None,
+            duration_s=round(time.monotonic() - self.t0, 2),
+            error=str(exc)[:500] if exc else None,
+        )
+        return False
 
 
 def save_job_cookies(job_id: int, cookies_text: str | None) -> str | None:
@@ -201,156 +280,198 @@ async def execute_pipeline(job_id: int):
         # --- Phase 1: Download ---
         _update_job(job_id, status=JobStatus.DOWNLOADING, progress_percentage=10)
         job = _get_job(job_id)
-        import asyncio
-        video_path = await asyncio.to_thread(
-            execute_download,
-            job.source_url,
-            cookies_file=cookies_file_for(job_id),
-            preferred_height=job.preferred_height if job.preferred_height is not None else 1080,
+        _diag(
+            job_id,
+            "PIPELINE_START",
+            source_url=(job.source_url or "")[:160],
+            source_type=job.source_type or "",
+            title=(job.title or "")[:80],
+            template_id=job.template_id or "auto",
+            max_clips=job.max_clips,
+            preferred_height=job.preferred_height,
+            burn_captions=job.burn_captions,
         )
+        import asyncio
+        with _Stage(job_id, "DOWNLOADING"):
+            video_path = await asyncio.to_thread(
+                execute_download,
+                job.source_url,
+                cookies_file=cookies_file_for(job_id),
+                preferred_height=job.preferred_height if job.preferred_height is not None else 1080,
+            )
 
-        # Upload source video to R2 for re-generation (non-fatal)
-        source_key = f"sources/{job_id}_source.mp4"
-        r2_url = upload_to_r2(video_path, source_key)
-        if r2_url:
-            _update_job(job_id, source_r2_key=source_key)
+            # Upload source video to R2 for re-generation (non-fatal)
+            source_key = f"sources/{job_id}_source.mp4"
+            r2_url = upload_to_r2(video_path, source_key)
+            if r2_url:
+                _update_job(job_id, source_r2_key=source_key)
 
-        # Cache source on the Volume too, so "generate more" works even when
-        # R2 is unavailable (R2 TLS cert incident, see app/config.py).
-        _cache_source(job_id, video_path)
+            # Cache source on the Volume too, so "generate more" works even when
+            # R2 is unavailable (R2 TLS cert incident, see app/config.py).
+            _cache_source(job_id, video_path)
+            _diag(
+                job_id, "SOURCE_META",
+                video_size=os.path.getsize(video_path) if video_path else None,
+            )
 
         # --- Phase 2: Transcribe ---
-        _update_job(job_id, status=JobStatus.TRANSCRIBING, progress_percentage=25)
-        segments = await execute_transcribe(video_path)
+        with _Stage(job_id, "TRANSCRIBING"):
+            _update_job(job_id, status=JobStatus.TRANSCRIBING, progress_percentage=25)
+            segments = await execute_transcribe(video_path)
 
-        # Save full transcript to job for later re-generation (may be empty
-        # for music/visual content — routed below).
-        _update_job(job_id, transcript_json=json.dumps(segments))
+            # Save full transcript to job for later re-generation (may be empty
+            # for music/visual content — routed below).
+            _update_job(job_id, transcript_json=json.dumps(segments))
+            _diag(
+                job_id, "TRANSCRIBE_RESULT",
+                segments=len(segments),
+                text_len=len(_get_transcript_text(segments)),
+            )
 
         # --- Phase 3: Analyze (content-aware) ---
-        _update_job(job_id, status=JobStatus.ANALYZING, progress_percentage=40)
-        # Cheap FFmpeg "sight" probes: scene cuts, loud moments, dead air
-        video_signals = await asyncio.to_thread(extract_video_signals, video_path)
+        with _Stage(job_id, "ANALYZING"):
+            _update_job(job_id, status=JobStatus.ANALYZING, progress_percentage=40)
+            # Cheap FFmpeg "sight" probes: scene cuts, loud moments, dead air
+            video_signals = await asyncio.to_thread(extract_video_signals, video_path)
 
-        # Face-aware crop: detect the speaker track ONCE, persist it on the
-        # Job, and reuse it for every render (pipeline, generate-more, trim).
-        # Empty track -> renders keep the static center crop.
-        face_track = await asyncio.to_thread(detect_face_track, video_path)
-        if face_track:
-            _update_job(job_id, face_track_json=json.dumps(face_track))
-            print(f"[pipeline] face track: {len(face_track)} samples saved")
+            # Face-aware crop: detect the speaker track ONCE, persist it on the
+            # Job, and reuse it for every render (pipeline, generate-more, trim).
+            # Empty track -> renders keep the static center crop.
+            face_track = await asyncio.to_thread(detect_face_track, video_path)
+            if face_track:
+                _update_job(job_id, face_track_json=json.dumps(face_track))
+                print(f"[pipeline] face track: {len(face_track)} samples saved")
 
-        has_speech = len(_get_transcript_text(segments).strip()) >= 10
-        content_type = classify_content(segments, video_signals)
-        if has_speech:
-            # Transcript-driven selection (podcasts, talking heads, commentary)
-            clips = await execute_analyze(
-                segments,
-                max_clips=job.max_clips,
-                campaign_rules=job.campaign_rules or "",
-                video_signals=video_signals,
+            has_speech = len(_get_transcript_text(segments).strip()) >= 10
+            content_type = classify_content(segments, video_signals)
+            if has_speech:
+                # Transcript-driven selection (podcasts, talking heads, commentary)
+                clips = await execute_analyze(
+                    segments,
+                    max_clips=job.max_clips,
+                    campaign_rules=job.campaign_rules or "",
+                    video_signals=video_signals,
+                )
+            else:
+                # No usable speech (music video, gameplay without commentary,
+                # visual B-roll): route to signal-based selection instead of
+                # failing the job.
+                clips = select_signal_clips(
+                    max_clips=job.max_clips,
+                    video_signals=video_signals,
+                )
+                print(
+                    f"[pipeline] no speech detected; content_type={content_type}; "
+                    f"selected {len(clips)} clips from signals"
+                )
+            clips = snap_clips_to_signals(clips, video_signals)
+            _diag(
+                job_id, "ANALYZE_RESULT",
+                content_type=content_type,
+                has_speech=has_speech,
+                clip_candidates=len(clips),
+                face_track_samples=len(face_track),
             )
-        else:
-            # No usable speech (music video, gameplay without commentary,
-            # visual B-roll): route to signal-based selection instead of
-            # failing the job.
-            clips = select_signal_clips(
-                max_clips=job.max_clips,
-                video_signals=video_signals,
-            )
-            print(
-                f"[pipeline] no speech detected; content_type={content_type}; "
-                f"selected {len(clips)} clips from signals"
-            )
-        clips = snap_clips_to_signals(clips, video_signals)
 
-        if not clips:
-            raise RuntimeError(
-                "Couldn't pick any watchable clips from this video. "
-                "Use a video with clear speech or a strong energy curve."
-            )
+            if not clips:
+                raise RuntimeError(
+                    "Couldn't pick any watchable clips from this video. "
+                    "Use a video with clear speech or a strong energy curve."
+                )
 
         # --- Phase 4: Render ---
-        _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
-        # Resolve "auto" template by genre and persist the pick so the frontend
-        # shows the real template and generate-more reuses it.
-        template_id = job.template_id or "auto"
-        if template_id == "auto":
-            template_id = recommend_template(
-                content_type,
-                title=job.title or "",
-                transcript_text=_get_transcript_text(segments),
+        with _Stage(job_id, "RENDERING"):
+            _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
+            # Resolve "auto" template by genre and persist the pick so the frontend
+            # shows the real template and generate-more reuses it.
+            template_id = job.template_id or "auto"
+            if template_id == "auto":
+                template_id = recommend_template(
+                    content_type,
+                    title=job.title or "",
+                    transcript_text=_get_transcript_text(segments),
+                )
+                _update_job(job_id, template_id=template_id)
+                print(
+                    f"[pipeline] auto template -> {template_id} "
+                    f"(content_type={content_type})"
+                )
+            rendered_paths = await execute_render(
+                video_path,
+                clips,
+                segments,
+                template_id,
+                burn_text=job.burn_captions,
+                trim_silence=job.trim_silence,
+                face_track=face_track,
             )
-            _update_job(job_id, template_id=template_id)
-            print(
-                f"[pipeline] auto template -> {template_id} "
-                f"(content_type={content_type})"
-            )
-        rendered_paths = await execute_render(
-            video_path,
-            clips,
-            segments,
-            template_id,
-            burn_text=job.burn_captions,
-            trim_silence=job.trim_silence,
-            face_track=face_track,
-        )
+            _diag(job_id, "RENDER_RESULT", rendered=len(rendered_paths))
 
         # --- Phase 5: SEO & Upload (per clip) ---
-        transcript_text = _get_transcript_text(segments)
-        if len(transcript_text.strip()) < 10:
-            # No speech to base SEO on (music/visual clip) — use the job title
-            transcript_text = f"[Video title] {job.title or 'Untitled'}"
-        seo_data = await execute_seo(transcript_text, campaign_rules=job.campaign_rules or "")
+        with _Stage(job_id, "SEO_UPLOAD"):
+            transcript_text = _get_transcript_text(segments)
+            if len(transcript_text.strip()) < 10:
+                # No speech to base SEO on (music/visual clip) — use the job title
+                transcript_text = f"[Video title] {job.title or 'Untitled'}"
+            seo_data = await execute_seo(transcript_text, campaign_rules=job.campaign_rules or "")
 
-        CLIPS_DIR.mkdir(parents=True, exist_ok=True)
+            CLIPS_DIR.mkdir(parents=True, exist_ok=True)
 
-        with Session(engine) as session:
-            db_job = session.get(Job, job_id)
+            with Session(engine) as session:
+                db_job = session.get(Job, job_id)
 
-            for i, rendered_path in enumerate(rendered_paths):
-                clip_info = clips[i]
-                key = f"clips/{job_id}_{i}.mp4"
-                r2_url = upload_to_r2(rendered_path, key)
-                is_offline = r2_url is None
+                for i, rendered_path in enumerate(rendered_paths):
+                    clip_info = clips[i]
+                    key = f"clips/{job_id}_{i}.mp4"
+                    r2_url = upload_to_r2(rendered_path, key)
+                    is_offline = r2_url is None
 
-                db_clip = VideoClip(
-                    job_id=job_id,
-                    start_time=clip_info["start"],
-                    end_time=clip_info["end"],
-                    duration=clip_info["end"] - clip_info["start"],
-                    r2_url=rendered_path,       # will update below
-                    r2_key=key if not is_offline else "",
-                    title_curiosity=seo_data.get("title_curiosity", ""),
-                    title_direct=seo_data.get("title_direct", ""),
-                    title_question=seo_data.get("title_question", ""),
-                    description=seo_data.get("description", ""),
-                    hashtags=seo_data.get("hashtags", ""),
-                    viral_score=clip_info.get("score"),
-                )
-                session.add(db_clip)
-                session.flush()  # get db_clip.id before commit
+                    db_clip = VideoClip(
+                        job_id=job_id,
+                        start_time=clip_info["start"],
+                        end_time=clip_info["end"],
+                        duration=clip_info["end"] - clip_info["start"],
+                        r2_url=rendered_path,       # will update below
+                        r2_key=key if not is_offline else "",
+                        title_curiosity=seo_data.get("title_curiosity", ""),
+                        title_direct=seo_data.get("title_direct", ""),
+                        title_question=seo_data.get("title_question", ""),
+                        description=seo_data.get("description", ""),
+                        hashtags=seo_data.get("hashtags", ""),
+                        viral_score=clip_info.get("score"),
+                    )
+                    session.add(db_clip)
+                    session.flush()  # get db_clip.id before commit
 
-                # Copy to predictable path that the download endpoint can serve
-                clip_serve_path = CLIPS_DIR / f"{job_id}_{db_clip.id}.mp4"
-                import shutil
-                shutil.copy2(rendered_path, str(clip_serve_path))
-                db_clip.r2_url = str(clip_serve_path)
+                    # Copy to predictable path that the download endpoint can serve
+                    clip_serve_path = CLIPS_DIR / f"{job_id}_{db_clip.id}.mp4"
+                    import shutil
+                    shutil.copy2(rendered_path, str(clip_serve_path))
+                    db_clip.r2_url = str(clip_serve_path)
 
-                # Publish this clip NOW: commit to the DB and the Volume so it
-                # is visible/downloadable while later clips are still rendering,
-                # and survives a mid-render failure instead of being rolled
-                # back with the whole job.
+                    # Publish this clip NOW: commit to the DB and the Volume so it
+                    # is visible/downloadable while later clips are still rendering,
+                    # and survives a mid-render failure instead of being rolled
+                    # back with the whole job.
+                    session.commit()
+                    await _volume_commit()
+
+                db_job.status = JobStatus.COMPLETED
+                db_job.progress_percentage = 100
+                session.add(db_job)
                 session.commit()
-                await _volume_commit()
+                _notify_terminal(JobStatus.COMPLETED)
 
-            db_job.status = JobStatus.COMPLETED
-            db_job.progress_percentage = 100
-            session.add(db_job)
-            session.commit()
-            _notify_terminal(JobStatus.COMPLETED)
+        _diag(job_id, "COMPLETED", clips_count=len(rendered_paths))
 
     except Exception as e:
+        stage = _ACTIVE_STAGE.get(job_id, "UNKNOWN")
+        _diag(
+            job_id, "FAILED",
+            stage=stage,
+            error=str(e)[:1000],
+            tb=traceback.format_exc()[-2000:],
+        )
         _update_job(job_id, status=JobStatus.FAILED, error_message=str(e))
         raise
 
@@ -371,6 +492,7 @@ async def generate_more_clips(job_id: int, count: int = 3):
     try:
         _update_job(job_id, status=JobStatus.ANALYZING, progress_percentage=40)
         job = _get_job(job_id)
+        _diag(job_id, "GENERATE_MORE_START", count=count)
 
         if not job.transcript_json:
             raise RuntimeError("Job has no saved transcript. Cannot generate more clips.")
@@ -396,112 +518,123 @@ async def generate_more_clips(job_id: int, count: int = 3):
         # Locate the source video: R2 → Volume cache → re-download
         tmp_video = await _resolve_source(job_id, job)
 
-        # Cheap FFmpeg "sight" probes: scene cuts, loud moments, dead air
-        import asyncio
-        video_signals = await asyncio.to_thread(extract_video_signals, tmp_video)
+        with _Stage(job_id, "ANALYZING"):
+            # Cheap FFmpeg "sight" probes: scene cuts, loud moments, dead air
+            import asyncio
+            video_signals = await asyncio.to_thread(extract_video_signals, tmp_video)
 
-        # Analyze with existing clips as exclusions
-        max_to_generate = min(count, job.max_clips)
-        has_speech = len(_get_transcript_text(segments).strip()) >= 10
-        if has_speech:
-            clips = await execute_analyze(
-                segments,
-                max_clips=max_to_generate,
-                existing_clips=existing_clips,
-                campaign_rules=job.campaign_rules or "",
-                video_signals=video_signals,
-            )
-            if not clips:
-                # DeepSeek refused to suggest anything new (existing clips cover
-                # the highlights). Retry once without exclusions so "generate
-                # more" can still produce additional crops of the same video.
-                print(
-                    "[generate-more] no new suggestions with exclusions; "
-                    "retrying without exclusions"
-                )
+            # Analyze with existing clips as exclusions
+            max_to_generate = min(count, job.max_clips)
+            has_speech = len(_get_transcript_text(segments).strip()) >= 10
+            if has_speech:
                 clips = await execute_analyze(
                     segments,
                     max_clips=max_to_generate,
+                    existing_clips=existing_clips,
                     campaign_rules=job.campaign_rules or "",
                     video_signals=video_signals,
                 )
-        else:
-            clips = select_signal_clips(
-                max_clips=max_to_generate,
-                video_signals=video_signals,
-                existing_clips=existing_clips,
-            )
+                if not clips:
+                    # DeepSeek refused to suggest anything new (existing clips cover
+                    # the highlights). Retry once without exclusions so "generate
+                    # more" can still produce additional crops of the same video.
+                    print(
+                        "[generate-more] no new suggestions with exclusions; "
+                        "retrying without exclusions"
+                    )
+                    clips = await execute_analyze(
+                        segments,
+                        max_clips=max_to_generate,
+                        campaign_rules=job.campaign_rules or "",
+                        video_signals=video_signals,
+                    )
+            else:
+                clips = select_signal_clips(
+                    max_clips=max_to_generate,
+                    video_signals=video_signals,
+                    existing_clips=existing_clips,
+                )
 
-        if not clips:
-            raise RuntimeError("Couldn't pick any watchable clips from this video")
+            if not clips:
+                raise RuntimeError("Couldn't pick any watchable clips from this video")
 
-        clips = snap_clips_to_signals(clips, video_signals)
+            clips = snap_clips_to_signals(clips, video_signals)
 
         # Render new clips
-        _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
-        face_track = json.loads(job.face_track_json) if job.face_track_json else None
-        rendered_paths = await execute_render(
-            tmp_video,
-            clips,
-            segments,
-            job.template_id,
-            burn_text=job.burn_captions,
-            trim_silence=job.trim_silence,
-            face_track=face_track,
-        )
+        with _Stage(job_id, "RENDERING"):
+            _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
+            face_track = json.loads(job.face_track_json) if job.face_track_json else None
+            rendered_paths = await execute_render(
+                tmp_video,
+                clips,
+                segments,
+                job.template_id,
+                burn_text=job.burn_captions,
+                trim_silence=job.trim_silence,
+                face_track=face_track,
+            )
 
         # SEO + upload
-        transcript_text = _get_transcript_text(segments)
+        with _Stage(job_id, "SEO_UPLOAD"):
+            transcript_text = _get_transcript_text(segments)
 
-        CLIPS_DIR.mkdir(parents=True, exist_ok=True)
+            CLIPS_DIR.mkdir(parents=True, exist_ok=True)
 
-        with Session(engine) as session:
-            db_job = session.get(Job, job_id)
+            with Session(engine) as session:
+                db_job = session.get(Job, job_id)
 
-            for i, rendered_path in enumerate(rendered_paths):
-                clip_info = clips[i]
+                for i, rendered_path in enumerate(rendered_paths):
+                    clip_info = clips[i]
 
-                # Generate SEO per clip transcript snippet
-                clip_transcript = _get_clip_transcript_text(segments, clip_info["start"], clip_info["end"])
-                if len(clip_transcript.strip()) < 10:
-                    # No speech in this clip (music/visual) — use the job title
-                    clip_transcript = f"[Video title] {job.title or 'Untitled'}"
-                seo_data = await execute_seo(clip_transcript, campaign_rules=job.campaign_rules or "")
+                    # Generate SEO per clip transcript snippet
+                    clip_transcript = _get_clip_transcript_text(segments, clip_info["start"], clip_info["end"])
+                    if len(clip_transcript.strip()) < 10:
+                        # No speech in this clip (music/visual) — use the job title
+                        clip_transcript = f"[Video title] {job.title or 'Untitled'}"
+                    seo_data = await execute_seo(clip_transcript, campaign_rules=job.campaign_rules or "")
 
-                clip_idx = len([c for c in db_job.clips if not c.deleted]) + i
-                key = f"clips/{job_id}_extra_{clip_idx}.mp4"
-                r2_url = upload_to_r2(rendered_path, key)
-                is_offline = r2_url is None
+                    clip_idx = len([c for c in db_job.clips if not c.deleted]) + i
+                    key = f"clips/{job_id}_extra_{clip_idx}.mp4"
+                    r2_url = upload_to_r2(rendered_path, key)
+                    is_offline = r2_url is None
 
-                db_clip = VideoClip(
-                    job_id=job_id,
-                    start_time=clip_info["start"],
-                    end_time=clip_info["end"],
-                    duration=clip_info["end"] - clip_info["start"],
-                    r2_url=rendered_path,       # will update below
-                    r2_key=key if not is_offline else "",
-                    title_curiosity=seo_data.get("title_curiosity", ""),
-                    title_direct=seo_data.get("title_direct", ""),
-                    title_question=seo_data.get("title_question", ""),
-                    description=seo_data.get("description", ""),
-                    hashtags=seo_data.get("hashtags", ""),
-                    viral_score=clip_info.get("score"),
-                )
-                session.add(db_clip)
-                session.flush()  # get db_clip.id before commit
+                    db_clip = VideoClip(
+                        job_id=job_id,
+                        start_time=clip_info["start"],
+                        end_time=clip_info["end"],
+                        duration=clip_info["end"] - clip_info["start"],
+                        r2_url=rendered_path,       # will update below
+                        r2_key=key if not is_offline else "",
+                        title_curiosity=seo_data.get("title_curiosity", ""),
+                        title_direct=seo_data.get("title_direct", ""),
+                        title_question=seo_data.get("title_question", ""),
+                        description=seo_data.get("description", ""),
+                        hashtags=seo_data.get("hashtags", ""),
+                        viral_score=clip_info.get("score"),
+                    )
+                    session.add(db_clip)
+                    session.flush()  # get db_clip.id before commit
 
-                # Copy to predictable path that the download endpoint can serve
-                clip_serve_path = CLIPS_DIR / f"{job_id}_{db_clip.id}.mp4"
-                import shutil
-                shutil.copy2(rendered_path, str(clip_serve_path))
-                db_clip.r2_url = str(clip_serve_path)
+                    # Copy to predictable path that the download endpoint can serve
+                    clip_serve_path = CLIPS_DIR / f"{job_id}_{db_clip.id}.mp4"
+                    import shutil
+                    shutil.copy2(rendered_path, str(clip_serve_path))
+                    db_clip.r2_url = str(clip_serve_path)
 
-                session.commit()
-                await _volume_commit()
+                    session.commit()
+                    await _volume_commit()
 
-        _update_job(job_id, status=JobStatus.COMPLETED, progress_percentage=100)
+            _update_job(job_id, status=JobStatus.COMPLETED, progress_percentage=100)
+        _diag(job_id, "COMPLETED", clips_count=len(rendered_paths), source="generate_more")
 
     except Exception as e:
+        stage = _ACTIVE_STAGE.get(job_id, "UNKNOWN")
+        _diag(
+            job_id, "FAILED",
+            stage=stage,
+            error=str(e)[:1000],
+            tb=traceback.format_exc()[-2000:],
+        )
         _update_job(job_id, status=JobStatus.FAILED, error_message=str(e))
         raise
 
@@ -610,21 +743,22 @@ async def trim_clip(clip_id: int, new_start: float, new_end: float):
             job_id = clip.job_id
             job_ref = job  # detached read-only copy; all columns already loaded
 
-        _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
+        with _Stage(job_id, "RENDERING"):
+            _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
 
-        segments = json.loads(job_ref.transcript_json)
-        tmp_video = await _resolve_source(job_id, job_ref)
-        face_track = json.loads(job_ref.face_track_json) if job_ref.face_track_json else None
-        rendered_paths = await execute_render(
-            tmp_video,
-            [{"start": new_start, "end": new_end}],
-            segments,
-            job_ref.template_id,
-            burn_text=job_ref.burn_captions,
-            trim_silence=job_ref.trim_silence,
-            face_track=face_track,
-        )
-        rendered_path = rendered_paths[0]
+            segments = json.loads(job_ref.transcript_json)
+            tmp_video = await _resolve_source(job_id, job_ref)
+            face_track = json.loads(job_ref.face_track_json) if job_ref.face_track_json else None
+            rendered_paths = await execute_render(
+                tmp_video,
+                [{"start": new_start, "end": new_end}],
+                segments,
+                job_ref.template_id,
+                burn_text=job_ref.burn_captions,
+                trim_silence=job_ref.trim_silence,
+                face_track=face_track,
+            )
+            rendered_path = rendered_paths[0]
 
         CLIPS_DIR.mkdir(parents=True, exist_ok=True)
         clip_serve_path = CLIPS_DIR / f"{job_id}_{clip_id}.mp4"
@@ -653,6 +787,13 @@ async def trim_clip(clip_id: int, new_start: float, new_end: float):
 
     except Exception as e:
         if job_id is not None:
+            stage = _ACTIVE_STAGE.get(job_id, "UNKNOWN")
+            _diag(
+                job_id, "FAILED",
+                stage=stage,
+                error=str(e)[:1000],
+                tb=traceback.format_exc()[-2000:],
+            )
             _update_job(job_id, status=JobStatus.FAILED, error_message=str(e))
         raise
 

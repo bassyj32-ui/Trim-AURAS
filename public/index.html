@@ -196,6 +196,11 @@
     </label>
     <div style="font-size:10px;color:var(--ink-dim);margin-top:4px;line-height:1.4;">Adds word-by-word animated captions directly onto the clip (no editing needed). Turn off for clean footage — you add text yourself later.</div>
 
+    <div style="height:1px;background:var(--hairline);margin:18px 0;"></div>
+    <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:6px;letter-spacing:0.5px;">Diagnostics <span style="font-weight:400;text-transform:none;letter-spacing:0;">(failure isolation — stays on this device)</span></div>
+    <button class="btn-small btn-outline" id="diagCopyBtn" style="width:100%;margin-bottom:8px;">Copy diagnostics log</button>
+    <button class="btn-small btn-outline" id="diagClearBtn" style="width:100%;">Clear diagnostics</button>
+
     <div style="display:flex;gap:8px;margin-top:20px;">
       <button class="btn-small btn-outline" id="modalCancel" style="flex:1;">Cancel</button>
       <button class="btn-small btn-primary" id="modalConfirm" style="flex:1;">Start Generating</button>
@@ -243,6 +248,28 @@ let trimSilence = localStorage.getItem('trimaura_trim_silence') === '1';
 let myLink = localStorage.getItem('trimaura_link') || '';
 let cookiesText = localStorage.getItem('trimaura_cookies') || '';  // restored on reload
 let currentResultsJobId = null;
+
+// --- Diagnostic logging (diag suite: isolate phone-vs-IDE failures) ---
+// Every event goes to console AND to localStorage so it survives a
+// background/reload on the phone. Retrieve via Settings → "Copy diagnostics".
+const DIAG_KEY = 'trimaura_diag';
+function diagLog(event, data) {
+  const entry = Object.assign({ t: Date.now(), iso: new Date().toISOString(), e: event }, data || {});
+  try {
+    const arr = JSON.parse(localStorage.getItem(DIAG_KEY) || '[]');
+    arr.push(entry);
+    if (arr.length > 600) arr.splice(0, arr.length - 600);
+    localStorage.setItem(DIAG_KEY, JSON.stringify(arr));
+  } catch (_) {}
+  if (window.console && console.log) console.log('[diag]', entry);
+}
+// Screen lock / tab switch / app backgrounding — prime suspect for the phone
+// failures. Note the exact job that was active when visibility changed.
+document.addEventListener('visibilitychange', () => {
+  diagLog('visibility', { state: document.visibilityState, job: currentJobId });
+});
+window.addEventListener('online', () => diagLog('network', { state: 'online', job: currentJobId }));
+window.addEventListener('offline', () => diagLog('network', { state: 'offline', job: currentJobId }));
 
 // Template gradient mapping (fallback)
 const templateGradients = {
@@ -379,6 +406,23 @@ function closeSettings() {
 settingsBtn.addEventListener('click', openSettings);
 settingsOverlay.addEventListener('click', closeSettings);
 modalCancel.addEventListener('click', closeSettings);
+
+// --- Diagnostics log export (diag suite) ---
+function copyDiagLog() {
+  const arr = JSON.parse(localStorage.getItem(DIAG_KEY) || '[]');
+  const text = arr.map(e => JSON.stringify(e)).join('\n');
+  if (!text) { showToast('No diagnostics recorded yet'); return; }
+  navigator.clipboard.writeText(text).then(
+    () => showToast('Diagnostics copied (' + arr.length + ' events)'),
+    () => showToast('Could not copy — screenshot the console instead')
+  );
+}
+function clearDiagLog() {
+  localStorage.removeItem(DIAG_KEY);
+  showToast('Diagnostics cleared');
+}
+document.getElementById('diagCopyBtn').addEventListener('click', copyDiagLog);
+document.getElementById('diagClearBtn').addEventListener('click', clearDiagLog);
 
 maxClipsSlider.addEventListener('input', () => {
   maxClipsValue.textContent = maxClipsSlider.value;
@@ -646,6 +690,7 @@ generateBtn.addEventListener('click', async () => {
     if (hasFile) {
       generateBtn.textContent = 'Uploading...';
       setProgress('UPLOADING', 0);
+      diagLog('upload_start', { name: selectedFile.name, size: selectedFile.size, mime: selectedFile.type });
 
       const form = new FormData();
       form.append('file', selectedFile);
@@ -656,26 +701,37 @@ generateBtn.addEventListener('click', async () => {
       res = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/api/jobs/upload');
+        let lastLoggedPct = -1;
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
             const pct = Math.round((e.loaded / e.total) * 100);
+            if (pct >= lastLoggedPct + 10) {
+              lastLoggedPct = pct;
+              diagLog('upload_progress', { pct, mb: Math.round(e.loaded / 1048576) });
+            }
             setProgress('UPLOADING', pct);
             generateBtn.textContent = `Uploading ${pct}%`;
           }
         };
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
+            diagLog('upload_done', { status: xhr.status });
             resolve(new Response(xhr.response, { status: xhr.status, headers: { 'Content-Type': 'application/json' } }));
           } else {
+            diagLog('upload_error', { status: xhr.status, body: String(xhr.response).slice(0, 300) });
             reject(new Error('Upload failed (' + xhr.status + ')'));
           }
         };
-        xhr.onerror = () => reject(new Error('Upload failed'));
+        xhr.onerror = () => {
+          diagLog('upload_error', { status: 'network' });
+          reject(new Error('Upload failed'));
+        };
         xhr.send(form);
       });
     } else {
       generateBtn.textContent = 'Processing...';
       setProgress('PENDING', 0);
+      diagLog('job_create', { url: url.slice(0, 120), template: templateId });
       res = await fetch('/api/jobs', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
@@ -692,8 +748,13 @@ generateBtn.addEventListener('click', async () => {
         })
       });
     }
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => '');
+      diagLog('job_create_error', { status: res.status, body: bodyText.slice(0, 300) });
+    }
     const data = await res.json();
     currentJobId = data.job_id;
+    diagLog('job_created', { job: data.job_id });
     generateBtn.textContent = 'Processing...';
     resultsList.innerHTML = '<div class="loading">Generating clips...</div>';
     startPolling(currentJobId);
@@ -706,17 +767,32 @@ generateBtn.addEventListener('click', async () => {
 });
 
 // --- Polling ---
+// NOTE (diag): this uses setInterval(…, 2000), which browsers throttle
+// heavily when the tab is backgrounded or the screen is locked (iOS Safari
+// can pause it entirely). The poll_gap log below measures that directly:
+// with a 2s interval, any gap >5s proves the page's timers were throttled.
 function startPolling(jobId) {
-  if (pollTimer) clearInterval(pollTimer);
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  diagLog('poll_start', { job: jobId });
+  let lastPollAt = Date.now();
 
   pollTimer = setInterval(async () => {
+    const now = Date.now();
+    const gap = now - lastPollAt;
+    lastPollAt = now;
     try {
       const res = await fetch(`/api/jobs/${jobId}/poll`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        diagLog('poll_http_error', { job: jobId, status: res.status });
+        return;
+      }
       const data = await res.json();
+      if (gap > 5000) diagLog('poll_gap', { job: jobId, ms: gap }); // throttled!
+      diagLog('poll_resp', { job: jobId, status: data.status, progress: data.progress, gap_ms: gap });
       setProgress(data.status, data.progress);
 
       if (data.status === 'COMPLETED') {
+        diagLog('poll_terminal', { job: jobId, status: 'COMPLETED' });
         clearInterval(pollTimer);
         pollTimer = null;
         generateBtn.disabled = false;
@@ -731,6 +807,7 @@ function startPolling(jobId) {
         sendNotification('TrimAURA', '✅ Shorts generated! Your clips are ready.');
       }
       if (data.status === 'FAILED') {
+        diagLog('poll_terminal', { job: jobId, status: 'FAILED', error: data.error || '' });
         clearInterval(pollTimer);
         pollTimer = null;
         generateBtn.disabled = false;
@@ -742,6 +819,7 @@ function startPolling(jobId) {
         if (!pushEnabled) sendNotification('TrimAURA', '❌ Generation failed: ' + (data.error || 'Unknown error'));
       }
     } catch(e) {
+      diagLog('poll_error', { job: jobId, err: String((e && e.message) || e) });
       // Silently retry
     }
   }, 2000);
@@ -916,6 +994,7 @@ function waitForTrimDone(clipId) {
         const res = await fetch(`/api/jobs/${drawerJobId}/poll`);
         const data = await res.json();
         if (data.status === 'RENDERING') seenRendering = true;
+        diagLog('trim_poll', { job: drawerJobId, status: data.status, clip: clipId });
         if (data.status === 'FAILED') {
           clearInterval(timer);
           trimStatus.textContent = 'Trim failed: ' + (data.error || 'Unknown error');
@@ -933,7 +1012,7 @@ function waitForTrimDone(clipId) {
           showToast('Clip trimmed & re-rendered!');
           resolve();
         }
-      } catch (e) { /* keep polling */ }
+      } catch (e) { diagLog('trim_poll_error', { job: drawerJobId, err: String((e && e.message) || e) }); /* keep polling */ }
     }, 1500);
   });
 }
