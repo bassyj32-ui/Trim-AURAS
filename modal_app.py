@@ -518,6 +518,91 @@ def yt_probe(url: str, cookies_text: str = "", impersonate: bool = False) -> str
     return result
 
 
+@app.function(timeout=120, image=image, volumes={DATA_DIR: data_volume})
+def ass_burn_probe() -> str:
+    """Verify the PlayResX/PlayResY burn-caption fix INSIDE the deployed image.
+
+    Renders the same karaoke ASS onto a black 1080x1920 canvas at t=2.0 twice
+    — once WITHOUT PlayRes, once WITH PlayResX=1080/PlayResY=1920 — and reports
+    the text bounding box for each:
+      * no PlayRes  -> libass defaults to a 384x288 canvas, so the text burns
+                       ~4x oversized at the TOP (expected y0~60, y1~680)
+      * PlayRes     -> text at bottom center, margin_v=180 (expected y~1700-1740)
+
+    Run via:  modal run modal_app.py::ass_burn_probe
+    """
+    import subprocess
+    from pathlib import Path
+
+    W, H = 1080, 1920
+    work = Path("/tmp/assprobe")
+    work.mkdir(parents=True, exist_ok=True)
+
+    ffv = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
+    ffv = (ffv.stdout or ffv.stderr).splitlines()[0] if ffv.stdout else "MISSING"
+
+    style_line = ("Style: Default,Arial Black,36,&H00FFFFFF,&H00FF3333,&H00000000,"
+                  "&H00000000,0,0,0,0,100,100,0,0,1,6,0,2,20,20,180,1")
+    kara_text = (r"{\k50}this {\k40}is {\k60}a {\k60}test {\k60}phrase "
+                 r"{\k60}with {\k60}several {\k60}words {\k60}aloud")
+    header_noplayres = "[Script Info]\nScriptType: v4.00+\nWrapStyle: 0\nScaledBorderAndShadow: yes"
+    header_playres = ("[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\n"
+                      "WrapStyle: 0\nScaledBorderAndShadow: yes")
+    body_tmpl = (
+        "{header}\n\n[V4+ Styles]\n"
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+        "{style}\n\n[Events]\n"
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+        "Dialogue: 0,0:00:00.00,0:00:05.90,Default,,0,0,0,,{text}\n"
+    )
+
+    def bbox(png: Path) -> str:
+        raw = work / (png.stem + ".raw")
+        r = subprocess.run([
+            "ffmpeg", "-y", "-v", "error", "-i", str(png),
+            "-vf", "scale=54:96", "-f", "rawvideo", "-pix_fmt", "gray", str(raw),
+        ], capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            return f"SCALE_FAILED: {r.stderr[-200:]}"
+        data = raw.read_bytes()
+        xs, ys = [], []
+        for y in range(96):
+            for x in range(54):
+                if data[y * 54 + x] > 24:
+                    xs.append(x)
+                    ys.append(y)
+        if not xs:
+            return "NO_TEXT (empty frame)"
+        cnt = len(xs)
+        x0, y0, x1, y1 = min(xs) * 20, min(ys) * 20, max(xs) * 20 + 20, max(ys) * 20 + 20
+        return f"bbox x={x0}-{x1} y={y0}-{y1} area={cnt} (y0={y0/H:.1%} y1={y1/H:.1%})"
+
+    results = [f"ffmpeg: {ffv}", f"canvas: {W}x{H}"]
+    for name, header in (("no_playres", header_noplayres), ("with_playres", header_playres)):
+        ass = work / f"{name}.ass"
+        ass.write_text(body_tmpl.format(header=header, style=style_line, text=kara_text), encoding="utf-8")
+        png = work / f"{name}.png"
+        r = subprocess.run([
+            "ffmpeg", "-y", "-v", "error", "-f", "lavfi",
+            "-i", "color=black:s=1080x1920:d=10:r=30",
+            "-ss", "2.0", "-frames:v", "1",
+            "-vf", f"subtitles={ass.name}:charenc=utf-8", png.name,
+        ], cwd=str(work), capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            results.append(f"{name}: BURN_FAILED: {r.stderr[-300:]}")
+        else:
+            results.append(f"{name}: {bbox(png)}")
+
+    result = "\n".join(results)
+    try:
+        Path(f"{DATA_DIR}/diag").mkdir(parents=True, exist_ok=True)
+        Path(f"{DATA_DIR}/diag/ass_burn_probe.txt").write_text(result)
+        data_volume.commit()
+    except Exception as e:
+        result += f"\n(volume write failed: {e})"
+    return result
+
+
 # ===========================================================================
 # 4. Entrypoint — verify image builds
 # ===========================================================================

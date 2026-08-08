@@ -692,11 +692,21 @@ generateBtn.addEventListener('click', async () => {
       setProgress('UPLOADING', 0);
       diagLog('upload_start', { name: selectedFile.name, size: selectedFile.size, mime: selectedFile.type });
 
+      // Practical upload guard: Modal's gateway is only reliable up to ~45MB
+      // from this network; beyond that uploads enter its 303 retry protocol and
+      // may fail. Warn early instead of failing mid-upload.
+      if (selectedFile.size > 47 * 1024 * 1024) {
+        showToast('File is ' + Math.round(selectedFile.size / 1048576) + ' MB - recommended input is H.264 MP4 under ~40 MB. Very large files may fail to upload; compress first if it fails.');
+      }
+
       const form = new FormData();
       form.append('file', selectedFile);
       form.append('template_id', templateId);
       form.append('campaign_rules', campaignRules);
       form.append('max_clips', maxClips.toString());
+      form.append('preferred_height', String(preferredHeight));
+      form.append('burn_captions', burnCaptions ? 'true' : 'false');
+      form.append('trim_silence', trimSilence ? 'true' : 'false');
 
       res = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
@@ -717,6 +727,33 @@ generateBtn.addEventListener('click', async () => {
           if (xhr.status >= 200 && xhr.status < 300) {
             diagLog('upload_done', { status: xhr.status });
             resolve(new Response(xhr.response, { status: xhr.status, headers: { 'Content-Type': 'application/json' } }));
+          } else if (xhr.status === 303) {
+            // Modal gateway large-request protocol: it answers a big upload with
+            // 303 + Location carrying __modal_attempt_token. The client must
+            // re-POST the SAME body to that Location to get the real response.
+            // (redirect:'manual' stops the browser from following the 303 as a
+            // body-less GET, which would drop the upload.)
+            const loc = xhr.getResponseHeader('Location');
+            diagLog('upload_303_retry', { loc: (loc || '').slice(0, 100) });
+            if (!loc) {
+              diagLog('upload_error', { status: xhr.status, body: 'no Location header' });
+              reject(new Error('Upload failed (' + xhr.status + ')'));
+              return;
+            }
+            fetch(loc, { method: 'POST', body: form, redirect: 'manual' })
+              .then((r) => {
+                if (r.status >= 200 && r.status < 300) {
+                  diagLog('upload_done', { status: r.status, via: 'retry' });
+                  resolve(r);
+                } else {
+                  diagLog('upload_error', { status: r.status, via: 'retry', body: '' });
+                  reject(new Error('Upload failed (' + r.status + ')'));
+                }
+              })
+              .catch(() => {
+                diagLog('upload_error', { status: 'network', via: 'retry' });
+                reject(new Error('Upload failed'));
+              });
           } else {
             diagLog('upload_error', { status: xhr.status, body: String(xhr.response).slice(0, 300) });
             reject(new Error('Upload failed (' + xhr.status + ')'));

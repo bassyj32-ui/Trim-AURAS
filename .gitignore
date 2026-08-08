@@ -36,3 +36,26 @@ check_err.py
 # Sensitive exports (never commit browser cookies)
 cookies.txt
 *.cookies.txt
+
+# One-off debug / test debris (keep the repo clean)
+_*.py
+_*.bat
+_*.ps1
+_*.txt
+_*.json
+_*.mp4
+_*.png
+*.zip
+job*.json
+jobs*.json
+logs*.txt
+modal_logs*.txt
+clip*_test.mp4
+clip_0.stderr.log
+diag_probe.mp4
+ffmpeg_probe.txt
+probe_result.txt
+r2_test_output.txt
+templates.json
+test_source_*.mp4
+tmppsnr_*.txt

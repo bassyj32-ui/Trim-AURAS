@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,18 @@ from app.config import settings
 
 TEMPLATES_DIR = Path("assets") / "templates"
 RENDER_DIR = Path("tmp") / "render"
+
+# Per-process render counter so every execute_render invocation gets a
+# distinct diagnostic stderr log (time_ns disambiguates across processes,
+# the counter across sequential renders inside the same process). Without
+# this, generate-more / clip-trim re-renders on the same job all write to
+# the same clip_0.stderr.log and clobber each other's evidence.
+_RENDER_RUN_ID = [0]
+
+
+def _next_render_run_id() -> str:
+    _RENDER_RUN_ID[0] += 1
+    return f"{time.time_ns()}_{_RENDER_RUN_ID[0]}"
 
 def _load_template(template_id: str) -> dict[str, Any]:
     path = TEMPLATES_DIR / template_id / "template.json"
@@ -299,6 +312,8 @@ def _build_subtitle_file(
     name: str = "subs",
     karaoke: bool = False,
     cuts: list[tuple[float, float]] | None = None,
+    canvas_w: int = 0,
+    canvas_h: int = 0,
 ) -> str:
     """Create an ASS subtitle file in the render workspace.
 
@@ -312,6 +327,12 @@ def _build_subtitle_file(
     the timeline (silence trimming); Dialogue times are remapped so captions
     stay synced to the condensed clip. Karaoke ``\\k`` durations are left
     untouched — cuts only land between words.
+
+    ``canvas_w``/``canvas_h`` are the final video dimensions. They are written
+    as PlayResX/PlayResY — REQUIRED: when the header lacks them, ffmpeg's
+    libass falls back to a tiny default canvas (384x288) and burns the text
+    into the video frame without scaling, so captions render ~4x oversized at
+    the top of the frame instead of at margin_v from the bottom.
     """
     cuts = cuts or []
     RENDER_DIR.mkdir(parents=True, exist_ok=True)
@@ -349,6 +370,11 @@ def _build_subtitle_file(
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
+
+    if canvas_w > 0 and canvas_h > 0:
+        # PlayRes is mandatory (see docstring): without it libass uses a tiny
+        # default canvas and the burned text lands oversized at the top.
+        lines[1:1] = [f"PlayResX: {canvas_w}", f"PlayResY: {canvas_h}"]
 
     for seg in segments:
         seg_start = seg.get("start", 0)
@@ -620,13 +646,14 @@ async def execute_render(
         cuts = _compute_silence_cuts(segments, trim_start, trim_end) if trim_silence else []
         cuts_rel = [(cs - trim_start, ce - trim_start) for cs, ce in cuts]
         duration = (trim_end - trim_start) - sum(ce - cs for cs, ce in cuts)
+        width, height = canvas["width"], canvas["height"]
         if burn_text:
             sub_file = _build_subtitle_file(
                 segments, trim_start, trim_end, sub_style, f"subs_{i}",
                 karaoke=burn_text, cuts=cuts_rel,
+                canvas_w=width, canvas_h=height,
             )
 
-        width, height = canvas["width"], canvas["height"]
         sw, sh = slot["width"], slot["height"]
         sx, sy = slot["x_offset"], slot["y_offset"]
 
@@ -758,16 +785,12 @@ async def execute_render(
         else:
             chains.append(f"[{post_label}]null[out]")
 
-        # Assemble full filter complex
-        filter_complex = ";".join(chains)
-
-        # --- FFmpeg command ---
-        cmd = ["ffmpeg", "-i", video_path]
-        next_input = 1
-        audio_map = "0:a?"
+        # Audio condense chains MUST be appended before the join below —
+        # `-map [conda]` references a label, so it has to exist in the graph
+        # that `filter_complex` is built from (previously appended after the
+        # join, so trim_silence renders failed with "Error opening output
+        # file: Invalid argument" — [conda] matched no stream).
         has_audio = _has_audio_stream(video_path)
-        # Silence trimming: condense audio with the same keep intervals so
-        # audio and video stay in sync (no drift).
         if cuts and has_audio:
             a_labels = []
             for j, (ks, ke) in enumerate(keeps):
@@ -776,7 +799,14 @@ async def execute_render(
             chains.append(
                 f"[{']['.join(a_labels)}]concat=n={len(a_labels)}:v=0:a=1[conda]"
             )
-            audio_map = "[conda]"
+
+        # Assemble full filter complex
+        filter_complex = ";".join(chains)
+
+        # --- FFmpeg command ---
+        cmd = ["ffmpeg", "-i", video_path]
+        next_input = 1
+        audio_map = "[conda]" if (cuts and has_audio) else "0:a?"
         if apply_overlay and overlay_path:
             cmd += ["-i", overlay_path]
             next_input += 1
@@ -826,7 +856,9 @@ async def execute_render(
             else RENDER_DIR
         )
         diag_dir.mkdir(parents=True, exist_ok=True)
-        stderr_log = diag_dir / (Path(out_path).stem + ".stderr.log")
+        # Unique per render invocation (run-id suffix) — sequential/concurrent
+        # renders of the same job no longer overwrite each other's log.
+        stderr_log = diag_dir / f"{Path(out_path).stem}_{_next_render_run_id()}.stderr.log"
 
         def _run_streamed() -> tuple[int, list[str]]:
             proc = subprocess.Popen(

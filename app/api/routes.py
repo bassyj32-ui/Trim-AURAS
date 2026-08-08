@@ -120,6 +120,17 @@ def _clip_posted(clip: VideoClip) -> list[str]:
 _VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".wmv", ".mts", ".m2ts")
 
 
+def _form_bool(value: Optional[str]) -> bool:
+    """Coerce a multipart Form boolean to a real Python bool.
+
+    SQLModel table models do NOT validate/coerce on construction (verified:
+    Job(burn_captions='true') stores the raw string), so a raw Form string
+    would be written straight into a Postgres BOOLEAN column and fail at
+    commit. Normalize 'true'/'false'/'1'/'0'/'yes'/'no'/'on'/'off' here.
+    """
+    return (value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 @router.post("/jobs", status_code=202)
 async def create_job(body: CreateJobRequest):
     url = (body.source_url or "").strip().lower()
@@ -197,7 +208,9 @@ async def upload_job(
     template_id: str = "auto",
     campaign_rules: Optional[str] = Form(None),
     max_clips: int = Form(5),
+    preferred_height: Optional[int] = Form(1080),  # match JSON route default; 0 = original
     burn_captions: Optional[str] = Form(None),
+    trim_silence: Optional[str] = Form(None),
 ):
     suffix = Path(file.filename).suffix if file.filename else ".mp4"
     upload_dir = Path("/mnt/data/uploads")
@@ -206,6 +219,13 @@ async def upload_job(
     with open(local_path, "wb") as f:
         while chunk := await file.read(1024 * 1024):  # 1MB chunks
             f.write(chunk)
+
+    # Coerce Form strings to real types BEFORE Job()/payload — SQLModel table
+    # models don't validate or coerce, so a raw 'true' string would hit the
+    # Postgres BOOLEAN column as-is and fail at commit (see _form_bool).
+    burn_on = _form_bool(burn_captions)
+    trim_on = _form_bool(trim_silence)
+    pref_h = preferred_height if preferred_height is not None else 1080
 
     # Commit the Volume so the spawned pipeline worker can see the file
     # immediately (Modal only flushes volume writes when this container exits).
@@ -223,7 +243,9 @@ async def upload_job(
             template_id=template_id,
             campaign_rules=campaign_rules,
             max_clips=max_clips,
-            burn_captions=burn_captions,
+            preferred_height=pref_h,
+            burn_captions=burn_on,
+            trim_silence=trim_on,
         )
         session.add(job)
         session.commit()
@@ -240,7 +262,9 @@ async def upload_job(
         "template_id": template_id,
         "campaign_rules": campaign_rules or "",
         "max_clips": max_clips,
-        "burn_captions": burn_captions,
+        "preferred_height": pref_h,
+        "burn_captions": burn_on,
+        "trim_silence": trim_on,
         "status": JobStatus.PENDING,
     }
     await _dispatch_pipeline(job_id, job_payload)
