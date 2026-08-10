@@ -1,4 +1,4 @@
-const CACHE = "trimaura-v10";
+const CACHE = "trimaura-v11";
 const SHELL = [
   "/",
   "/index.html",

@@ -14,6 +14,7 @@
   'use strict';
 
   var SUPABASE_URL = 'https://jbnbjsdralphdbjcwukf.supabase.co';
+  var SUPABASE_REF = 'jbnbjsdralphdbjcwukf';
   var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpibmJqc2RyYWxwaGRiamN3dWtmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzMzU3NjEsImV4cCI6MjEwMDkxMTc2MX0.A36GAaTnBzg-Lm7NIfXMTrM3YkWbA4I70ptIOB2MWfs';
 
   var client = null;
@@ -43,6 +44,46 @@
     return url.indexOf('/api/') === 0;
   }
 
+  function addAuthHeader(init, token) {
+    init.headers = init.headers || {};
+    if (Array.isArray(init.headers)) {
+      init.headers.push(['Authorization', 'Bearer ' + token]);
+    } else if (typeof Headers !== 'undefined' && init.headers instanceof Headers) {
+      init.headers.set('Authorization', 'Bearer ' + token);
+    } else {
+      init.headers['Authorization'] = 'Bearer ' + token;
+    }
+  }
+
+  // A 401 with a token attached usually means the access token expired before
+  // the auto-refresh finished. Refresh once; only if that genuinely fails do
+  // we clear the session and prompt the user to sign in again.
+  function auth401() {
+    if (!client) return Promise.resolve(false);
+    return client.auth.refreshSession().then(function (r) {
+      var s = r.data && r.data.session;
+      if (s && s.access_token) {
+        window.__authToken = s.access_token;
+        session = s;
+        renderAuth();
+        return true;
+      }
+      signOutQuietly();
+      return false;
+    }).catch(function () {
+      signOutQuietly();
+      return false;
+    });
+  }
+
+  function signOutQuietly() {
+    window.__authToken = null;
+    session = null;
+    renderAuth();
+    if (client) { try { client.auth.signOut(); } catch (e) {} }
+    openAuth('Session expired — please sign in again');
+  }
+
   function patchFetch() {
     var origFetch = window.fetch;
     window.fetch = function (input, init) {
@@ -53,14 +94,7 @@
 
       if (isApi) {
         if (window.__authToken) {
-          init.headers = init.headers || {};
-          if (Array.isArray(init.headers)) {
-            init.headers.push(['Authorization', 'Bearer ' + window.__authToken]);
-          } else if (typeof Headers !== 'undefined' && init.headers instanceof Headers) {
-            init.headers.set('Authorization', 'Bearer ' + window.__authToken);
-          } else {
-            init.headers['Authorization'] = 'Bearer ' + window.__authToken;
-          }
+          addAuthHeader(init, window.__authToken);
         } else if (method !== 'GET' && method !== 'HEAD') {
           // Guest write attempt — don't hit the network, prompt to sign in.
           openAuth('Sign in to create clips');
@@ -73,9 +107,17 @@
         }
       }
 
+      var self = this;
       return origFetch.call(this, input, init).then(function (res) {
-        if (isApi && res.status === 401 && window.__authToken) {
-          openAuth('Session expired — sign in again');
+        if (isApi && res.status === 401 && window.__authToken && client && !init.__taRetried) {
+          init.__taRetried = true;
+          return auth401().then(function (refreshed) {
+            if (refreshed) {
+              addAuthHeader(init, window.__authToken);
+              return origFetch.call(self, input, init);
+            }
+            return res;
+          });
         }
         return res;
       });
@@ -104,7 +146,7 @@
         }
         var xhr = this;
         this.addEventListener('load', function () {
-          if (xhr.status === 401 && window.__authToken) openAuth('Session expired — sign in again');
+          if (xhr.status === 401 && window.__authToken) auth401();
         });
       }
       return origSend.apply(this, arguments);
@@ -207,6 +249,19 @@
 
   // --- Boot --------------------------------------------------------------
 
+  // Read the persisted session synchronously so the app's very first /api/*
+  // calls already carry the Authorization header (supabase-js' getSession()
+  // is async, so without this the first calls race ahead and hit 401).
+  function syncTokenFromStorage() {
+    try {
+      var stored = localStorage.getItem('sb-' + SUPABASE_REF + '-auth-token');
+      if (stored) {
+        var s = JSON.parse(stored);
+        if (s && s.access_token) window.__authToken = s.access_token;
+      }
+    } catch (e) { /* no stored session */ }
+  }
+
   function init() {
     if (!window.supabase) return; // CDN unavailable — degrade to static shell
     client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -216,6 +271,7 @@
         detectSessionInUrl: true,
       },
     });
+    syncTokenFromStorage();
     patchFetch();
     patchXHR();
     window.addEventListener('DOMContentLoaded', function () {

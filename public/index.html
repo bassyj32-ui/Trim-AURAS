@@ -836,12 +836,31 @@ generateMoreBtn.addEventListener('click', async () => {
 });
 
 // --- Vault / History ---
+function renderSignInCta() {
+  historyEl.innerHTML = `<div class="vault-empty">
+    <span class="vault-empty-icon">🔐</span>
+    <p class="vault-empty-title">Sign in to see your clips</p>
+    <p class="vault-empty-desc">Your generated shorts live here once you sign in with Google.</p>
+    <button class="btn-small btn-primary" id="vaultSignInBtn" style="margin-top:6px;">Sign in</button>
+  </div>`;
+  var b = document.getElementById('vaultSignInBtn');
+  if (b) b.addEventListener('click', function () {
+    if (window.TrimAuraAuth) window.TrimAuraAuth.openAuth('Sign in to see your clips');
+    else showToast('Sign in coming soon');
+  });
+}
+
 async function loadHistory() {
   try {
     const [jobsRes, clipsRes] = await Promise.all([
       fetch('/api/jobs'),
       fetch('/api/clips')
     ]);
+    // 401 = not signed in (or session gone) — show the sign-in prompt, not a server error
+    if (jobsRes.status === 401 || clipsRes.status === 401) {
+      renderSignInCta();
+      return;
+    }
     if (!jobsRes.ok || !clipsRes.ok) throw new Error('API unavailable');
     const jobs = await jobsRes.json();
     const clips = await clipsRes.json();
