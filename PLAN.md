@@ -48,7 +48,8 @@ trimaura/
 │   ├── index.html              # PWA frontend (warm cream design, publish kit, quality selector)
 │   ├── styles.css              # CSS design system
 │   ├── manifest.json           # Web App Manifest
-│   ├── service-worker.js       # Cache-first service worker (⚠ refresh after deploys)
+│   ├── service-worker.js       # Cache-first service worker (⚠ refresh after deploys; cache v11 precaches auth.js)
+│   ├── auth.js                 # Supabase Google OAuth — modal, account chip, fetch/XHR token injection, 401 refresh-retry (Phase 7.50)
 │   └── template-previews/      # Lightweight JPEG template previews
 │
 ├── modal_app.py                # Modal cloud deployment
@@ -226,12 +227,42 @@ trimaura/
 | 7.48 | Burn-caption parity — PlayRes root cause + upload flag hardening | ✅ | Three-part fix from the x.md parity session (x.md now archived into this entry). **(a) SQLModel does zero coercion → upload 500s on Supabase.** Proven by direct test (`scripts/diag_coercion_test.py`): table models accept `Job(burn_captions=None)` silently AND store `Job(burn_captions='true')` as the raw string `'true'` — fine on SQLite's dynamic typing, fatal on Supabase's Postgres BOOLEAN at commit. Added explicit bool/int coercion in `app/api/routes.py` (JSON + upload paths; values wired into both `Job()` and the dispatch payload) and the 3 missing FormData appends (`burn_captions`, `trim_silence`, `preferred_height`) in `public/index.html`. Parity matrix verified live: `burn_captions=true` persisted (PIPELINE_START log), `preferred_height=480` persisted (worker read 480), job flags flow through generate-more + trim too. **(b) trim_silence ffmpeg EINVAL (latent until now).** The audio-condense chains (`[conda]`) were appended to `chains` **after** `filter_complex` was already joined → `-map [conda]` referenced a stream that never existed in the graph → ffmpeg EINVAL. Unreachable before because `trim_silence` was never received via upload. Fix: move the audio block before the join. Verified: local render outputs 6.0s (10s − 2×2s cuts), Modal job 96 FAILED pre-fix → job 99 COMPLETED post-fix (filter evidence shows `[ka0][ka1][ka2]concat...[conda]` + `[kv0][kv1][kv2]concat...[condv]`, stream map `concat:out:a0 → Stream #0:1`). **(c) THE MAIN ONE — burned captions rendered ~4× oversized at the TOP (PSNR-12dB / band_diff-0 mystery).** Controlled burn ON vs OFF (static crop, same segments/clip/template) showed PSNR 11.97dB but bottom-band diff 0 — an apparent contradiction. Frame-accurate PSNR (`-ss` AFTER `-i`): t=2.0 = 11.97dB (inside caption window), t=7.0 = 46.9dB (pixel-identical) → the two renders differ ONLY while a caption is on screen. 5×5 grid mean-abs-RGB diff localized the t=2.0 delta to the TOP rows; a 106×22 gray ASCII render showed multi-line text at the top of the BURN frame; row profile (`scale=1:1920` gray per-row diff) = 3 bands y=58–228, 299–467, 507–707 — three caption lines ~170–200px tall vs the ~40–50px a font_size 36 should produce → 4× oversized. The band_diff of 0 was NOT a contradiction — it measured the BOTTOM band, where nothing had been rendered. **Root cause: the generated ASS header had no `PlayResX`/`PlayResY`** → libass falls back to a tiny 384×288 default canvas and burns the text WITHOUT scaling, laid out from the top of the frame (alignment + margin_v ignored). Conclusive A/B (`scripts/diag_ass_variants.py`, text bbox of non-black pixels on a black 1080×1920 canvas at t=2.0): `A karaoke_noplayres` y=60–680 (3.1%–35.4%), area 317 → broken/top; `C karaoke_playres` y=1700–1740 (88.5%–90.6%), area 32 → correct (margin_v=180 from bottom); `G short_hello` also lands at top even with alignment=2; `F \an2 override` can't fix it. **Fix in `app/pipeline/video_editor.py`**: `_build_subtitle_file()` gained `canvas_w`/`canvas_h` params — when >0 it inserts `PlayResX`/`PlayResY` immediately after `[Script Info]` (docstring explains libass's 384×288 fallback); `execute_render()` computes `width, height = canvas["width"], canvas["height"]` BEFORE the burn block and passes them in. **Local verification** (controlled burn re-run): PSNR t=2.0 = 25.2dB (expected magnitude for a caption-only difference), bottom-band diff 662/32400 px = 2.04% (was 0), row profile = single band y=1708–1737 (89.0%–90.5% of frame = margin_v 180 from bottom). **Deployed verification**: added `modal_app.py::ass_burn_probe` (self-contained, patterned after `ffmpeg_probe`) which burns the same karaoke ASS onto black 1080×1920 inside the DEPLOYED image (ffmpeg n8.1.2 BtbN pin) and reports the text bbox — `no_playres` bbox x=180–900 y=40–680 area=301 (y0=2.1% y1=35.4%) → broken; `with_playres` bbox x=180–380 y=1700–1740 area=17 (y0=88.5% y1=90.6%) → fixed. Identical to local results → fix confirmed end-to-end on Modal. Earlier deployed-side temporal band-diff (`scripts/diag_burn_modal.py`, jobs 101/102) was INCONCLUSIVE — the auto-template picked different source windows per job (7.4–30.3s vs 0.1–38.3s) and overlays aren't fully opaque — superseded by the isolated `ass_burn_probe`. Diagnostic scripts retained as regression evidence: `diag_coercion_test`, `diag_ass_variants`, `diag_ass_probe`, `diag_row_profile`, `diag_burn_local`, `diag_burn_modal` |
 | 7.49 | Full x1.md QA matrix + upload-limit investigation | ✅ | **(a) QA matrix vs live Modal API (jobs 109–153).** 23 labeled rows (`scripts/qa_matrix_run.py`, evidence in `tmp/qa/results.jsonl`) + concurrency (`qa_concurrency.py`), generate-more (`qa_generate_more.py`), upload ceiling (`qa_upload_ceiling.py`/`qa_follow_redirect.py`). Findings: **13/13 completed jobs valid** — every clip probes 1080×1920 H.264+AAC, downloadable, byte-exact sizes; settings verified via **per-render unique stderr logs** (`video_editor.py` `_next_render_run_id()`; second `# ` header line = full `-filter_complex`): `burn_captions` on ⇔ `subtitles=` present (4/4), `trim_silence` on ⇔ `atrim=` segments (3/3, e.g. `atrim=7.9:12.64,16.38:21.5` → clip 164 exactly 9.867s); generate-more: job 109 1→2 clips, no dupes, state persists; concurrency: no app-state corruption (transport failures only). Deterministic content-failure root causes (NOT bugs): 4K HEVC → `clip_candidates: 0` at ANALYZING; silent WebM → ffmpeg exit 234 at TRANSCRIBING; w3.org direct URLs → 403 datacenter-IP block; Vimeo → yt-dlp OAuth 401. New diag surface: `GET /api/jobs/{id}/diag` (per-stage events + tracebacks). **(b) Upload-limit investigation (see task file; evidence `tmp/qa/upload_boundary*.jsonl`).** The "~50MB ceiling" is **NOT a fixed byte limit** — it's a mix of (i) the frontend misreading Modal's normal large-body protocol, and (ii) a slow/variable link. Modal's gateway answers large bodies with `303 + Location?__modal_attempt_token=…` (docs: bodies up to **4 GiB**) and the client must re-POST to the Location; the XHR treated any non-2xx as failure ("Upload failed (303)") while the Job was actually created and **COMPLETED** server-side (jobs 146/147 under 303 → COMPLETED). Boundary sweep: 40/49/50MB → 202 OK; 45/47/60MB → 303 (45/47 still created+completed jobs); 60MB with retry → `500 upstream request timeout` at 798s while **70MB with retry → 202 in 145s** — identical-class sizes, opposite outcomes → **time/network-dependent** (Modal gateway ~13-min upload budget on this ~75–500KB/s link). **Fix (cheap, frontend-only, `public/index.html`)**: on `xhr.status === 303`, re-POST the same FormData to the `Location` with `fetch(redirect:'manual')` (prevents the browser 303→GET body-drop; Modal's token dedupes — no duplicate jobs, verified 45MB→202 and 70MB→202 single job each) + a >47MB warning toast ("recommended input: H.264 MP4 under ~40 MB"). **No infra changes** — R2/chunked uploads explicitly deferred (NOT worth it for an internal tool). **Operating limit: keep uploads ≤40MB for now**; 45–70MB works when the link is healthy |
 
+| 7.50 | Supabase Auth (Google OAuth) + multi-tenancy — LIVE | ✅ | Full per-user system shipped (commits `ec33113` auth / `5f0637d` UX fixes / `d18aa92` docs, deployed **2026-08-11**). **Backend** — new `app/auth.py` exposes `get_current_user` (`Depends()` on every protected route): Bearer JWT verified server-side via `supabase.auth.get_user(token)` (lazy client, safe import), 401 on missing/invalid. Jobs & clips are created with `user_id = user["id"]`; `list_jobs`/`list_clips` return only the caller's rows; `_owned_job`/`_owned_clip` return 404 for foreign rows (no existence leak); `POST /api/claim-legacy` (idempotent, localStorage-guarded `trimaura_claimed_<userId>`) claims the 88 legacy `default` rows on first sign-in. **RLS defense-in-depth** — `supabase/migrations/add_auth_rls.sql` enables ROW LEVEL SECURITY on `job`/`videoclip`/`pushsubscription` with `auth.uid()` policies (`videoclip` via `EXISTS (SELECT 1 FROM job WHERE job.id = videoclip.job_id AND job.user_id = auth.uid()::text)`; `pushsubscription` intentionally policy-less). Verified live: anon-key REST `GET /rest/v1/job` and `/rest/v1/videoclip` both return `[]`; `pg_policy` lists the policies. (The Modal backend's superuser connection bypasses RLS, so the JWT gate is the primary enforcement.) **Frontend** — `public/auth.js` (`window.TrimAuraAuth`): Google sign-in modal, account chip (avatar/name/sign-out), monkey-patched `fetch` + `XMLHttpRequest` inject `Authorization` from the `sb-jbnbjsdralphdbjcwukf-auth-token` localStorage key (guest writes get a synthetic 401 + modal, no network). Race & UX fixes (`5f0637d`): `syncTokenFromStorage()` reads the token synchronously at boot (kills the first-request 401 race); `auth401()` silently refreshes the session + retries once, only opening the "Session expired — please sign in again" modal if refresh genuinely fails (`signOutQuietly`); `loadHistory()` renders a 🔐 "Sign in to see your clips" CTA on 401 instead of the false "Could not reach the server" error; SW cache v10→v11 precaches `/auth.js`. **OAuth config** — Google Cloud OAuth client: Authorized redirect URI = `https://bassyj32--trimaura-fastapi-app.modal.run`; Supabase dashboard Site URL + Redirect URL allow list = the same modal.run URL (provider verified live via the authorize redirect). **Deployment** — image adds `supabase>=2.10.0`; Modal secrets `trimaura-secrets-v2` / `trimaura-supabase-keys` / `trimaura-db-url`; live `GET /api/jobs` returns **401** without a token (auth enforced), `/` and `/auth.js` 200. **Data ownership correction** — all 88 jobs / 182 clips moved to admin `bassyjmin@gmail.com` (`UPDATE public.job SET user_id = 'd3e37376-2a64-4dfa-a184-701c67c2e206' WHERE user_id IN ('7b5a4339-dcd0-47b9-ae89-e94b2ea11baf','default')`); zero rows left on `default`; `auth.users` now has exactly 2 accounts |
+
 **Known limitations (V1):**
 - YouTube downloads from Modal's cloud IPs are blocked by Google's bot check ("Sign in to confirm you're not a bot") — even with cookies, Chrome impersonation, and a PO-token provider. Works from residential IPs; a residential proxy would unblock it (deferred, see 7.33)
 - TikTok/Instagram login-walled videos still need an exported cookies.txt — upload it in Settings → Cookies File (fixes YouTube's bot check on cloud IPs too; solved for the YouTube case in 7.31)
 - Music/visual clips get generic SEO (title-only) since there's no transcript to mine
 - `select_signal_clips` is deterministic — "Generate more" may return nothing new once energy windows are exhausted
 - Upload size is network-limited, not app-limited: keep files under ~40MB (H.264 MP4 recommended); 45–70MB works when the link is fast but can hit Modal's gateway upload timeout on slow connections (see 7.49)
+
+***
+
+## 📊 Readiness Audit — 2026-08-11
+
+> Verdict: **7.5/10** — already in real use (auth + admin account live on Modal). The core is production-grade; the edges (YouTube, security, scale) are what stand between "my tool" and "their tool". See the upgrade backlog below.
+
+| Area                     | Score | Why                                                                                                                                                       |
+| ------------------------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core pipeline (download → clips) | **9/10** | QA matrix 13/13 valid, concurrency + generate-more tested, settings verified via per-render stderr. Genuinely solid.                                      |
+| UI/UX + PWA              | **9/10** | Phone-tested, push notifications, publish kit, clip viewer, auth modal/chip. Polished.                                                                    |
+| Auth & data isolation    | **8/10** | Google OAuth + JWT gate + RLS verified live. Missing: email/password option, roles, admin view.                                                          |
+| Reliability & observability | **8/10** | Sentry + diag endpoints + stderr logs. But polling (no queue), no auto-retry/backoff, no uptime monitor.                                                  |
+| Platform coverage        | **6/10** | YouTube blocked from Modal's cloud IPs (bot check) — biggest gap for a clipping tool. TikTok/IG need cookies.txt. Frame.io/GDrive/direct links great.      |
+| Security (SaaS-grade)    | **5/10** | No rate limiting, no abuse protection, no billing, `pushsubscription` table intentionally policy-less. Fine solo, risky for open signup.                  |
+| Scale                    | **5/10** | Perfect for a handful of users; polling + single region + Modal free tier creaks past ~50 active users.                                                   |
+
+### Upgrade backlog (work later — ordered by impact for onboarding others)
+
+| # | Task                                                              | Lifts                        | Notes                                                        |
+| - | ----------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------ |
+| 1 | YouTube unblock via residential proxy                             | Platform coverage 6→9        | Deferred in 7.33; most creators' source video is YouTube      |
+| 2 | Rate limiting + abuse guard (per-user quotas on job/clip creation)| Security 5→8                 | Prevents strangers from DoS-ing the Modal endpoint            |
+| 3 | Invite-gating or billing (Stripe metered)                         | Security 5→8, Scale          | So other users don't burn your compute; Phase 8 billing plan exists |
+| 4 | Job queue + auto-retry/backoff + uptime monitor                   | Reliability 8→9              | Replace 2s polling; cron `/health` ping every 5 min           |
+| 5 | Email/password auth + roles + admin view                          | Auth 8→9                     | Supabase email/OTP is supported out of the box                |
+| 6 | `pushsubscription` RLS policy + stale-row cleanup                 | Security                     | Policy-less by design (7.50) — revisit before open signup     |
+| 7 | Multi-region / proper job queue for scale                         | Scale 5→7                    | Only needed once users > ~50                                  |
 
 ***
 
@@ -254,20 +285,22 @@ Ranked by ROI for the current solo/gaming workflow. Not scheduled.
 
 ## 🚀 Phase 8 — Scaling for Thousands of Users
 
-**Status:** 📋 PLANNED
+**Status:** 🔄 IN PROGRESS — Auth & Multi-Tenancy P0 shipped LIVE (Phase 7.50); queue, billing, and CDN items below are still planned
 
 This phase is what turns TrimAURA from a personal tool into a SaaS product serving 1000s of creators.
 
 ### Auth & Multi-Tenancy
 
-| Priority | Feature                                    | Why                                            |
-| -------- | ------------------------------------------ | ---------------------------------------------- |
-| 🔴 P0    | User auth (Google OAuth or email+password) | Each user needs isolated jobs, clips, settings |
-| 🔴 P0    | User ↔ Job relationship in models          | `Job.user_id` foreign key                      |
-| 🔴 P0    | Per-user clip vault                        | Users see only their own clips                 |
-| 🟡 P1    | Team / workspace support                   | Agencies managing multiple clients             |
+| Priority | Feature                                    | Status                                      | Why                                            |
+| -------- | ------------------------------------------ | ------------------------------------------- | ---------------------------------------------- |
+| 🔴 P0    | User auth (Google OAuth)                   | ✅ LIVE (2026-08-11, Phase 7.50)             | Each user needs isolated jobs, clips, settings |
+| 🔴 P0    | User ↔ Job relationship in models          | ✅ LIVE — `Job.user_id` + `_owned_*` helpers | `Job.user_id` foreign key                      |
+| 🔴 P0    | Per-user clip vault                        | ✅ LIVE — auth-filtered list_jobs/list_clips | Users see only their own clips                 |
+| 🟡 P1    | Team / workspace support                   | 📋 FUTURE                                   | Agencies managing multiple clients             |
 
 ### Database — SQLite → PostgreSQL
+
+> ✅ **DONE (2026-08-11)** — already live on Supabase PostgreSQL since 7.14; schema migrations (incl. `add_auth_rls.sql`) live in `supabase/migrations/`.
 
 | Why                                                      | Migration Path                                          |
 | -------------------------------------------------------- | ------------------------------------------------------- |
@@ -468,6 +501,7 @@ python -m modal app logs trimaura --since=30m
 
 # Check secret
 python -m modal secret list
+# Auth secrets required on Modal: trimaura-secrets-v2, trimaura-supabase-keys, trimaura-db-url (Phase 7.50)
 
 # Run locally (API only)
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
