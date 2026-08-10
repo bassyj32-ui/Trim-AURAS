@@ -6,11 +6,12 @@ from pathlib import Path
 from typing import Optional
 
 import tempfile
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from app.auth import get_current_user
 from app.config import MODAL, settings
 from app.database import engine
 from app.models import Job, JobStatus, PushSubscription, VideoClip, clip_vault_cutoff
@@ -131,8 +132,27 @@ def _form_bool(value: Optional[str]) -> bool:
     return (value or "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _owned_job(session: Session, job_id: int, user_id: str) -> Job:
+    """Fetch a job and 404 unless it belongs to the caller (no existence leak)."""
+    job = session.get(Job, job_id)
+    if not job or job.user_id != user_id:
+        raise HTTPException(404, "Job not found")
+    return job
+
+
+def _owned_clip(session: Session, clip_id: int, user_id: str) -> VideoClip:
+    """Fetch a non-deleted clip and 404 unless its job belongs to the caller."""
+    clip = session.get(VideoClip, clip_id)
+    if not clip or clip.deleted:
+        raise HTTPException(404, "Clip not found")
+    job = session.get(Job, clip.job_id)
+    if not job or job.user_id != user_id:
+        raise HTTPException(404, "Clip not found")
+    return clip
+
+
 @router.post("/jobs", status_code=202)
-async def create_job(body: CreateJobRequest):
+async def create_job(body: CreateJobRequest, user: dict = Depends(get_current_user)):
     url = (body.source_url or "").strip().lower()
     if url and not url.startswith(("http://", "https://")) and not url.endswith(_VIDEO_EXTS):
         raise HTTPException(
@@ -152,6 +172,7 @@ async def create_job(body: CreateJobRequest):
 
     with Session(engine) as session:
         job = Job(
+            user_id=user["id"],
             title=body.title,
             source_url=body.source_url,
             template_id=body.template_id,
@@ -182,6 +203,7 @@ async def create_job(body: CreateJobRequest):
     # shared Volumes.
     job_payload = {
         "id": job_id,
+        "user_id": user["id"],
         "title": body.title,
         "source_url": body.source_url,
         "template_id": body.template_id,
@@ -211,6 +233,7 @@ async def upload_job(
     preferred_height: Optional[int] = Form(1080),  # match JSON route default; 0 = original
     burn_captions: Optional[str] = Form(None),
     trim_silence: Optional[str] = Form(None),
+    user: dict = Depends(get_current_user),
 ):
     suffix = Path(file.filename).suffix if file.filename else ".mp4"
     upload_dir = Path("/mnt/data/uploads")
@@ -238,6 +261,7 @@ async def upload_job(
 
     with Session(engine) as session:
         job = Job(
+            user_id=user["id"],
             title=file.filename or "Untitled Upload",
             source_url=local_path,
             template_id=template_id,
@@ -257,6 +281,7 @@ async def upload_job(
     # shared Volumes.
     job_payload = {
         "id": job_id,
+        "user_id": user["id"],
         "title": file.filename or "Untitled Upload",
         "source_url": local_path,
         "template_id": template_id,
@@ -277,11 +302,9 @@ async def upload_job(
 
 
 @router.get("/jobs/{job_id}")
-def get_job(job_id: int):
+def get_job(job_id: int, user: dict = Depends(get_current_user)):
     with Session(engine) as session:
-        job = session.get(Job, job_id)
-        if not job:
-            raise HTTPException(404, "Job not found")
+        job = _owned_job(session, job_id, user["id"])
         clips_data = [
             {
                 "clip_id": c.id,
@@ -318,7 +341,7 @@ def get_job(job_id: int):
 
 
 @router.get("/jobs/{job_id}/poll")
-def poll_job_status(job_id: int):
+def poll_job_status(job_id: int, user: dict = Depends(get_current_user)):
     """Lightweight polling endpoint used by the frontend.
 
     Reads job status directly from the DB (Supabase is shared between the
@@ -327,9 +350,7 @@ def poll_job_status(job_id: int):
     be stale/absent on this container and caused flickering statuses.
     """
     with Session(engine) as session:
-        job = session.get(Job, job_id)
-        if not job:
-            raise HTTPException(404, "Job not found")
+        job = _owned_job(session, job_id, user["id"])
         return {
             "status": job.status,
             "progress": job.progress_percentage,
@@ -338,7 +359,7 @@ def poll_job_status(job_id: int):
 
 
 @router.get("/jobs/{job_id}/diag")
-def job_diag(job_id: int):
+def job_diag(job_id: int, user: dict = Depends(get_current_user)):
     """Stage-level diagnostics for a job (diagnostic suite).
 
     Returns the timestamped event log written by the pipeline orchestrator
@@ -347,9 +368,7 @@ def job_diag(job_id: int):
     lives on the shared Volume; on local dev it's tmp/diag/job_{id}_diag.jsonl.
     """
     with Session(engine) as session:
-        job = session.get(Job, job_id)
-        if not job:
-            raise HTTPException(404, "Job not found")
+        job = _owned_job(session, job_id, user["id"])
         base = {
             "job_id": job.id,
             "status": job.status,
@@ -395,11 +414,9 @@ def job_diag(job_id: int):
 
 
 @router.get("/jobs/{job_id}/stream")
-def stream_job(job_id: int):
+def stream_job(job_id: int, user: dict = Depends(get_current_user)):
     with Session(engine) as session:
-        job = session.get(Job, job_id)
-        if not job:
-            raise HTTPException(404, "Job not found")
+        _owned_job(session, job_id, user["id"])
 
     return StreamingResponse(
         event_stream(job_id),
@@ -413,10 +430,12 @@ def stream_job(job_id: int):
 
 
 @router.get("/jobs")
-def list_jobs():
+def list_jobs(user: dict = Depends(get_current_user)):
     with Session(engine) as session:
         jobs = session.exec(
-            select(Job).order_by(Job.created_at.desc())
+            select(Job)
+            .where(Job.user_id == user["id"])
+            .order_by(Job.created_at.desc())
         ).all()
         # Avoid the N+1: count all non-deleted clips in ONE query instead of
         # touching j.clips (lazy load) for every job.
@@ -442,14 +461,36 @@ def list_jobs():
         ]
 
 
+# --- Claim legacy data (pre-auth rows) ---
+
+@router.post("/claim-legacy", status_code=200)
+def claim_legacy(user: dict = Depends(get_current_user)):
+    """Attach rows created before auth (user_id='default') to the caller.
+
+    The first signed-in user gets the pre-existing jobs/clips (they are
+    theirs). Idempotent — rows already owned by a user are never touched.
+    """
+    with Session(engine) as session:
+        legacy = session.exec(
+            select(Job).where(Job.user_id == "default")
+        ).all()
+        for j in legacy:
+            j.user_id = user["id"]
+            session.add(j)
+        session.commit()
+        return {"claimed": len(legacy)}
+
+
 # --- Generate More Clips ---
 
 @router.post("/jobs/{job_id}/generate-more", status_code=202)
-async def api_generate_more(job_id: int, body: GenerateMoreRequest = GenerateMoreRequest()):
+async def api_generate_more(
+    job_id: int,
+    body: GenerateMoreRequest = GenerateMoreRequest(),
+    user: dict = Depends(get_current_user),
+):
     with Session(engine) as session:
-        job = session.get(Job, job_id)
-        if not job:
-            raise HTTPException(404, "Job not found")
+        job = _owned_job(session, job_id, user["id"])
         if not job.transcript_json:
             raise HTTPException(
                 400,
@@ -468,11 +509,13 @@ async def api_generate_more(job_id: int, body: GenerateMoreRequest = GenerateMor
 # --- Clip Vault Endpoints ---
 
 @router.get("/clips")
-def list_clips():
+def list_clips(user: dict = Depends(get_current_user)):
     cutoff = clip_vault_cutoff()
     with Session(engine) as session:
         clips = session.exec(
             select(VideoClip)
+            .join(Job, VideoClip.job_id == Job.id)
+            .where(Job.user_id == user["id"])
             .where(VideoClip.deleted == False)
             .where(VideoClip.created_at >= cutoff)
             .order_by(VideoClip.created_at.desc())
@@ -502,7 +545,9 @@ def list_clips():
 
 
 @router.post("/clips/{clip_id}/refresh-seo")
-async def api_refresh_seo(clip_id: int):
+async def api_refresh_seo(clip_id: int, user: dict = Depends(get_current_user)):
+    with Session(engine) as session:
+        _owned_clip(session, clip_id, user["id"])
     try:
         seo_data = await refresh_clip_seo(clip_id)
         return {
@@ -521,11 +566,9 @@ async def api_refresh_seo(clip_id: int):
 
 
 @router.delete("/clips/{clip_id}")
-def delete_clip(clip_id: int):
+def delete_clip(clip_id: int, user: dict = Depends(get_current_user)):
     with Session(engine) as session:
-        clip = session.get(VideoClip, clip_id)
-        if not clip:
-            raise HTTPException(404, "Clip not found")
+        clip = _owned_clip(session, clip_id, user["id"])
         clip.deleted = True
         session.add(clip)
         session.commit()
@@ -533,16 +576,18 @@ def delete_clip(clip_id: int):
 
 
 @router.post("/clips/{clip_id}/posted")
-def toggle_posted(clip_id: int, body: TogglePostedRequest):
+def toggle_posted(
+    clip_id: int,
+    body: TogglePostedRequest,
+    user: dict = Depends(get_current_user),
+):
     """Mark/unmark a clip as posted to a platform (tiktok | youtube | instagram)."""
     platform = (body.platform or "").strip().lower()
     if platform not in _PLATFORM_KEYS:
         raise HTTPException(400, "Unsupported platform — use tiktok, youtube, or instagram")
 
     with Session(engine) as session:
-        clip = session.get(VideoClip, clip_id)
-        if not clip:
-            raise HTTPException(404, "Clip not found")
+        clip = _owned_clip(session, clip_id, user["id"])
         posted = _clip_posted(clip)
         if platform in posted:
             posted.remove(platform)
@@ -555,7 +600,11 @@ def toggle_posted(clip_id: int, body: TogglePostedRequest):
 
 
 @router.post("/clips/{clip_id}/trim", status_code=202)
-async def api_trim_clip(clip_id: int, body: TrimClipRequest):
+async def api_trim_clip(
+    clip_id: int,
+    body: TrimClipRequest,
+    user: dict = Depends(get_current_user),
+):
     """Tighten a rendered clip's boundaries and re-render from the source.
 
     New bounds must be strictly inside the clip's original start/end (the
@@ -565,9 +614,7 @@ async def api_trim_clip(clip_id: int, body: TrimClipRequest):
     if body.start >= body.end:
         raise HTTPException(400, "start must be < end")
     with Session(engine) as session:
-        clip = session.get(VideoClip, clip_id)
-        if not clip or clip.deleted:
-            raise HTTPException(404, "Clip not found")
+        clip = _owned_clip(session, clip_id, user["id"])
         if body.start < clip.start_time or body.end > clip.end_time:
             raise HTTPException(
                 400,
@@ -589,11 +636,9 @@ async def api_trim_clip(clip_id: int, body: TrimClipRequest):
 
 
 @router.get("/clips/{clip_id}/download")
-async def download_clip(clip_id: int):
+async def download_clip(clip_id: int, user: dict = Depends(get_current_user)):
     with Session(engine) as session:
-        clip = session.get(VideoClip, clip_id)
-        if not clip or clip.deleted:
-            raise HTTPException(404, "Clip not found")
+        clip = _owned_clip(session, clip_id, user["id"])
 
     # On Modal, try to serve directly from the Volume first
     if MODAL:

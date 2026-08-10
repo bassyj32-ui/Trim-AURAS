@@ -1,0 +1,14 @@
+# TrimAURA Roadmap — pending parts
+
+Current state: desktop shell + mobile/PWA polish + full offline shell ported to the real app (public/index.html + styles.css + service-worker.js + manifest.json), verified at 360px + 1366px. Mocks that define the spec: `public/desktop-mock.html`, `public/mobile-mock.html`.
+
+## Next parts (chosen in order, rest deferred by user for later sessions)
+
+1. **Real-flow polish** — ✅ DONE (2026-08-10): empty-state cards (results / vault / styles), error-variant toast on 7 failure paths, aria-labels on all 11 form fields, closed drawers hidden from the AX tree. Verified at 390px + 1366px via snapshots/evaluate_script. Remaining: live upload → generate → clip-drawer test once the sandbox has network to the dev server / Modal backend.
+2. **Auth + payments integration** — Auth part ✅ DONE (2026-08-10): Supabase Auth (Google OAuth only) wired end-to-end — `app/auth.py` JWT verification gate on every protected `/api` route, `job.user_id` stamped + filtered per user, legacy `user_id='default'` rows claimed by the first account (`POST /api/claim-legacy`), RLS enabled on `job`/`videoclip`/`pushsubscription` with `auth.uid()` policies, frontend `public/auth.js` (sign-in modal, account chip with real name/avatar, fetch+XHR token injection, guest write-block), SW v10 precaches `auth.js`. Verified at 360px + 1366px via a11y snapshots + evaluate_script, plus live 401/200 checks against the local FastAPI app. Remaining: configure Google OAuth client ID/secret in the Supabase dashboard, confirm `SUPABASE_URL`/`SUPABASE_ANON_KEY` in Modal secrets, redeploy to Modal. **Payments part pending** (Stripe checkout on the Upgrade/plans shells) — needs a backend / external-service decision (breaks the zero-backend rule).
+3. **PWA depth** — ✅ DONE (2026-08-10): SW v9 offline shell (precache `/`, `index.html`, `clip.html`, styles, icons; network-first navigation with cached fallback; stale-while-revalidate assets), upgraded manifest (id/scope/categories/display_override + purpose icons), offline banner + online/offline JS, SW update loop (30-min + on-focus, `updateViaCache:none`), appinstalled toast, error-variant toast + graceful backend-offline states on all API failure paths, iOS install hints (apple-touch metas, PWA install sheet with share-sheet instructions, one-time hint toast), splash-*.png assets generated. Verified at 360px + 1366px via a11y snapshots + evaluate_script — incl. CDP Offline emulation (banner appears; reload serves the cached shell). Remaining: live push subscription once `/api/push/*` + a push service are reachable from the sandbox.
+4. **Content features** — more template styles, SEO caption editor, posting flows (auto-open YouTube Shorts / TikTok / IG with caption copied).
+
+## Constraints
+- Frontend-only polish must NOT change `app/main.py` (static server) or the Modal backend.
+- Browser verification must use a11y snapshots + evaluate_script only — no screenshots.

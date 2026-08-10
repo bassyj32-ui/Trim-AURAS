@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#C9A056">
+<meta name="color-scheme" content="light">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -18,94 +19,199 @@
 <meta name="description" content="Convert long videos into viral 9:16 shorts with AI subtitles and SEO.">
 <script src="https://browser.sentry-cdn.com/8.0.0/bundle.min.js" crossorigin="anonymous"></script>
 <script>Sentry.init({dsn:"https://4090566c839e1e35cd37ebb1cf2d678b@o4511656889614336.ingest.us.sentry.io/4511656910389248"});</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/auth.js"></script>
 </head>
 <body>
+
+<!-- Offline indicator (PWA shell — slides in when the connection drops) -->
+<div class="offline-banner" id="offlineBanner" role="status" aria-live="polite">
+  <span class="offline-dot"></span>
+  <span>You're offline — showing the saved version</span>
+</div>
+
+<!-- Desktop top header (revealed ≥1025px) -->
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-avatar"><span></span></div>
+    <div>
+      <div class="brand-name">TrimAURA</div>
+      <div class="brand-sub">Upload once. Create endlessly.</div>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="stat-num">1,204</div><div class="stat-label">CLIPS MADE</div></div>
+    <div class="stat-sep"></div>
+    <div class="stat"><div class="stat-num">68%</div><div class="stat-label">WATCH-THROUGH</div></div>
+    <div class="stat-sep"></div>
+    <div class="stat"><div class="stat-num">10K</div><div class="stat-label">REACHED</div></div>
+  </div>
+  <div class="top-actions">
+    <button class="upgrade-btn" id="upgradeBtn">Upgrade</button>
+    <button class="account-chip" id="accountBtn" aria-haspopup="true" aria-label="Sign in">
+      <span class="account-avatar" id="accountAvatar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 10-16 0"/><circle cx="12" cy="7" r="4"/></svg></span>
+      <span class="account-name" id="accountName">Sign in</span>
+      <svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <!-- Account dropdown (auth/payment-ready shell) -->
+    <div class="account-menu" id="accountMenu">
+      <div class="menu-item">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24"><path d="M20 21a8 8 0 10-16 0"/><circle cx="12" cy="7" r="4"/></svg>
+        My account
+      </div>
+      <div class="menu-item gold" id="menuBilling">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18 M7 15h4"/></svg>
+        Billing &amp; plans
+      </div>
+      <div class="menu-item" id="menuSettings">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2 M12 18.8V21 M4.9 4.9l1.6 1.6 M17.5 17.5l1.6 1.6 M3 12h2.2 M18.8 12H21 M4.9 19.1l1.6-1.6 M17.5 6.5l1.6-1.6"/></svg>
+        Settings
+      </div>
+      <div class="menu-sep"></div>
+      <div class="menu-item danger" id="menuSignout">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5 M21 12H9"/></svg>
+        Sign out
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Usage meter (mobile <1025px — compact card under the header) -->
+<div class="usage-card">
+  <span>3 OF 5 CLIPS USED</span>
+  <span class="meter"><i style="width:40%"></i></span>
+</div>
+
+<!-- Desktop secondary nav — future: Library / Billing / Settings (revealed ≥1025px) -->
+<nav class="top-nav">
+  <div class="nav-tabs">
+    <button class="nav-tab active" id="navStudio">Studio</button>
+    <button class="nav-tab" id="navLibrary">Library</button>
+    <button class="nav-tab" id="navBilling">Billing <span class="lock">SOON</span></button>
+    <button class="nav-tab" id="navSettings">Settings</button>
+  </div>
+  <div class="nav-right">3 CLIPS LEFT THIS WEEK <span class="meter"><i style="width:40%"></i></span></div>
+</nav>
 
 <div class="frame-wrapper">
 <div class="frame">
 <div class="scroll">
-<div class="container" style="padding:26px 0 40px;">
+<div class="container">
 
-  <!-- Brand Profile -->
-  <div class="profile reveal" style="animation-delay:0.08s;">
-    <div class="avatar"><div class="avatar-mark"></div></div>
-    <div class="p-name">TrimAURA</div>
-    <div class="p-sub">Upload once. Create endlessly.</div>
-  </div>
+  <!-- LEFT / MOBILE TOP: Studio panel -->
+  <div class="panel panel-studio">
 
-  <!-- New Short Section -->
-  <div class="section-label reveal" style="animation-delay:0.18s;">New short</div>
-
-  <div class="url-field reveal" style="animation-delay:0.2s;">
-    <input class="url-input" id="urlInput" type="url" placeholder="YouTube, TikTok, Google Drive / Frame.io link" autocomplete="url">
-  </div>
-
-  <div class="divider-or reveal" style="animation-delay:0.22s;">OR</div>
-
-  <div class="upload-card reveal" style="animation-delay:0.24s;" id="uploadZone">
-    <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/x-matroska,.mp4,.mov,.mkv">
-    <button class="upload-clear" id="uploadClear" style="display:none" title="Remove file">&times;</button>
-    <div class="upload-icon" id="uploadIcon">
-      <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V6 M8 10l4-4 4 4"/><path d="M5 18h14"/></svg>
+    <!-- Brand Profile (mobile only — desktop brand lives in the topbar) -->
+    <div class="profile reveal" style="animation-delay:0.08s;">
+      <div class="avatar"><div class="avatar-mark"></div></div>
+      <div class="p-name">TrimAURA</div>
+      <div class="p-sub">Upload once. Create endlessly.</div>
     </div>
-    <div class="upload-filename" id="uploadText">Drop your video here or tap to browse</div>
-    <div class="upload-check" id="uploadCheck" style="display:none">
-      <svg class="icon" width="10" height="10" viewBox="0 0 24 24" style="stroke:var(--green)"><path d="M4 12l5 5L20 6"/></svg>
-      READY TO PROCESS
+
+    <div class="section-label reveal" style="animation-delay:0.18s;">New short</div>
+
+    <div class="url-field reveal" style="animation-delay:0.2s;">
+      <svg class="icon" width="15" height="15" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+      <input class="url-input" id="urlInput" type="url" placeholder="YouTube, TikTok, Google Drive / Frame.io link" autocomplete="url" aria-label="Video link">
     </div>
+
+    <div class="divider-or reveal" style="animation-delay:0.22s;">OR</div>
+
+    <div class="upload-card reveal" style="animation-delay:0.24s;" id="uploadZone">
+      <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/x-matroska,.mp4,.mov,.mkv" aria-label="Upload video file">
+      <button class="upload-clear" id="uploadClear" style="display:none" title="Remove file">&times;</button>
+      <div class="upload-icon" id="uploadIcon">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V6 M8 10l4-4 4 4"/><path d="M5 18h14"/></svg>
+      </div>
+      <div class="upload-filename" id="uploadText">Drop your video here or tap to browse</div>
+      <div class="upload-check" id="uploadCheck" style="display:none">
+        <svg class="icon" width="10" height="10" viewBox="0 0 24 24" style="stroke:var(--green)"><path d="M4 12l5 5L20 6"/></svg>
+        READY TO PROCESS
+      </div>
+    </div>
+
+    <!-- CTA Row — sits right under the input, templates collapse below (Opus-style) -->
+    <div class="cta-row reveal" style="animation-delay:0.3s;">
+      <button class="cta" id="generateBtn">Generate shorts</button>
+      <button class="icon-btn" id="downloadAllBtn" title="Download all clips">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V4m0 12-4-4m4 4 4-4"/><path d="M16 20H8"/></svg>
+      </button>
+      <button class="icon-btn" id="pwaInstall" title="Install App / Notifications">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V4m0 12-4-4m4 4 4-4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" title="Settings">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2 M12 18.8V21 M4.9 4.9l1.6 1.6 M17.5 17.5l1.6 1.6 M3 12h2.2 M18.8 12H21 M4.9 19.1l1.6-1.6 M17.5 6.5l1.6-1.6"/></svg>
+      </button>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress-track reveal" style="animation-delay:0.34s;" id="progressWrap">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <div class="progress-row reveal" style="animation-delay:0.36s;">
+      <span id="progressStatus">PENDING</span>
+      <span id="progressPct">0%</span>
+    </div>
+
+    <!-- Collapsible Style picker (templates hidden behind toggle) -->
+    <div class="collapse-toggle reveal" id="tplToggle" style="animation-delay:0.4s;">
+      <span class="section-label" style="margin:0;">Style <span class="hint" id="styleHint">Blur Pad</span></span>
+      <span class="collapse-meta"><span class="tpl-count" id="tplCount">—</span>
+        <svg class="icon chevron" width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </span>
+    </div>
+    <div class="tpl-wrap reveal" id="tplWrap" style="animation-delay:0.42s;">
+      <div class="style-row" id="styleList" style="margin-top:12px;">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+
   </div>
 
-  <!-- Style Picker — Circular Chips -->
-  <div class="section-label reveal" style="animation-delay:0.28s;margin-top:24px;">Style <span class="hint" id="styleHint">Blur Pad</span></div>
+  <!-- RIGHT / MOBILE BOTTOM: Results + Vault -->
+  <div class="panel panel-content">
 
-  <div class="style-row" id="styleList">
-    <!-- Rendered by JS -->
-  </div>
+    <div class="section-label reveal" style="animation-delay:0.5s;" id="resultsLabel">
+      Results <span class="hint" id="resultsCount"></span>
+    </div>
 
-  <!-- CTA Row + Download All + Settings -->
-  <div class="cta-row reveal" style="animation-delay:0.5s;">
-    <button class="cta" id="generateBtn">Generate shorts</button>
-    <button class="icon-btn" id="downloadAllBtn" title="Download all clips">
-      <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V4m0 12-4-4m4 4 4-4"/><path d="M16 20H8"/></svg>
-    </button>
-    <button class="icon-btn" id="pwaInstall" title="Install App / Notifications">
-      <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V4m0 12-4-4m4 4 4-4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
-    </button>
-    <button class="icon-btn" id="settingsBtn" title="Settings">
-      <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2 M12 18.8V21 M4.9 4.9l1.6 1.6 M17.5 17.5l1.6 1.6 M3 12h2.2 M18.8 12H21 M4.9 19.1l1.6-1.6 M17.5 6.5l1.6-1.6"/></svg>
-    </button>
-  </div>
+    <div id="resultsList" class="reveal" style="animation-delay:0.52s;">
+      <div class="vault-empty">
+        <span class="vault-empty-icon">⚡</span>
+        <p class="vault-empty-title">No shorts yet</p>
+        <p class="vault-empty-desc">Paste a link or upload a video above, pick a style, and hit Generate shorts. Your clips will show up here.</p>
+      </div>
+    </div>
+    <button class="ghost-btn reveal hidden" id="generateMoreBtn" style="animation-delay:0.53s;margin-top:12px;width:100%;">＋ Generate more clips</button>
 
-  <!-- Progress -->
-  <div class="progress-track reveal" style="animation-delay:0.54s;" id="progressWrap">
-    <div class="progress-fill" id="progressFill"></div>
-  </div>
-  <div class="progress-row reveal" style="animation-delay:0.56s;">
-    <span id="progressStatus">PENDING</span>
-    <span id="progressPct">0%</span>
-  </div>
+    <div class="section-label reveal" id="vaultLabel" style="animation-delay:0.56s;margin-top:24px;">Clip vault <span class="hint" id="vaultCount">0 pending</span></div>
 
-  <!-- Results Section (shown after generation) -->
-  <div class="section-label reveal" style="animation-delay:0.6s;margin-top:28px;" id="resultsLabel">
-    Results <span class="hint" id="resultsCount"></span>
-  </div>
+    <div id="historyList" class="reveal" style="animation-delay:0.58s;">
+      <div class="loading">Loading...</div>
+    </div>
 
-  <div id="resultsList" class="reveal" style="animation-delay:0.62s;">
-    <!-- Rendered by JS after job completes -->
-  </div>
-  <button class="ghost-btn reveal hidden" id="generateMoreBtn" style="animation-delay:0.63s;margin-top:12px;width:100%;">＋ Generate more clips</button>
-
-  <!-- Clip Vault -->
-  <div class="section-label reveal" style="animation-delay:0.66s;margin-top:24px;">Clip vault <span class="hint" id="vaultCount">0 pending</span></div>
-
-  <div id="historyList" class="reveal" style="animation-delay:0.68s;">
-    <div class="loading">Loading...</div>
   </div>
 
 </div>
 </div>
 </div>
 </div>
+
+<!-- Bottom tab bar (mobile <1025px — Studio / Library / Settings; Billing lives in the account sheet) -->
+<nav class="tab-bar" aria-label="Primary">
+  <button class="tab active" id="tabStudio">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>
+    Studio
+  </button>
+  <button class="tab" id="tabLibrary">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18 M9 21V9"/></svg>
+    Library
+  </button>
+  <button class="tab" id="tabSettings">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2 M12 18.8V21 M4.9 4.9l1.6 1.6 M17.5 17.5l1.6 1.6 M3 12h2.2 M18.8 12H21 M4.9 19.1l1.6-1.6 M17.5 6.5l1.6-1.6"/></svg>
+    Settings
+  </button>
+</nav>
 
 <!-- Clip Drawer -->
 <div class="drawer-overlay" id="drawerOverlay"></div>
@@ -113,7 +219,18 @@
   <div class="drawer-handle"></div>
   <div class="drawer-content">
     <div class="clip-nav" id="clipNav"></div>
-    <video id="clipVideo" controls playsinline preload="metadata"></video>
+    <div class="clip-stage">
+      <video id="clipVideo" controls playsinline preload="metadata"></video>
+      <button class="car-nav prev" id="prevClipBtn" title="Previous clip" aria-label="Previous clip">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24" style="stroke:#fff"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <button class="car-nav next" id="nextClipBtn" title="Next clip" aria-label="Next clip">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24" style="stroke:#fff"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+      <button class="drawer-close" id="drawerCloseBtn" title="Close" aria-label="Close">
+        <svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
     <div class="drawer-title" id="drawerTitle"></div>
     <div class="drawer-meta" id="drawerMeta"></div>
     <div class="drawer-actions">
@@ -131,14 +248,14 @@
       <label style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--ink-dim);margin-bottom:2px;">
         <span>Start</span><span id="trimStartLabel" style="font-weight:700;color:var(--ink);"></span>
       </label>
-      <input type="range" id="trimStartSlider" min="0" max="100" value="0" step="0.5" style="width:100%;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;">
+      <input type="range" id="trimStartSlider" min="0" max="100" value="0" step="0.5" style="width:100%;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;" aria-label="Trim start position">
       <label style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--ink-dim);margin:10px 0 2px;">
         <span>End</span><span id="trimEndLabel" style="font-weight:700;color:var(--ink);"></span>
       </label>
-      <input type="range" id="trimEndSlider" min="0" max="100" value="100" step="0.5" style="width:100%;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;">
+      <input type="range" id="trimEndSlider" min="0" max="100" value="100" step="0.5" style="width:100%;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;" aria-label="Trim end position">
       <div id="trimStatus" style="font-size:10px;color:var(--ink-dim);margin-top:6px;line-height:1.4;"></div>
     </div>
-    <div style="margin-top:18px;">
+    <div class="publish-block" style="margin-top:18px;">
       <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Publish</div>
       <div id="publishRow" style="display:flex;flex-direction:column;gap:8px;"></div>
       <div style="font-size:10px;color:var(--ink-dim);margin-top:8px;line-height:1.4;">Each button copies a ready caption, downloads the MP4, and opens the platform's upload page. Tap ✓ after you post so you never double-post.</div>
@@ -157,11 +274,11 @@
     <div style="font-size:15px;font-weight:700;margin:8px 0 16px;">Campaign Settings</div>
 
     <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:6px;letter-spacing:0.5px;">Campaign Rules (SEO instructions)</label>
-    <textarea id="campaignRulesInput" rows="3" placeholder="e.g. Use professional tone, include keywords: productivity, AI tools, automation" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:14px;font-family:var(--font);outline:none;resize:vertical;min-height:60px;"></textarea>
+    <textarea id="campaignRulesInput" rows="3" placeholder="e.g. Use professional tone, include keywords: productivity, AI tools, automation" aria-label="Campaign rules" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:14px;font-family:var(--font);outline:none;resize:vertical;min-height:60px;"></textarea>
 
     <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin:16px 0 6px;letter-spacing:0.5px;">Max Clips Per Video</label>
     <div style="display:flex;align-items:center;gap:12px;">
-      <input type="range" id="maxClipsSlider" min="1" max="10" value="5" style="flex:1;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;">
+      <input type="range" id="maxClipsSlider" min="1" max="10" value="5" aria-label="Maximum clips per video" style="flex:1;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;">
       <span id="maxClipsValue" style="font-size:22px;font-weight:800;color:var(--ink);min-width:28px;text-align:center;">5</span>
     </div>
     <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--ink-dim);margin-top:2px;">
@@ -170,7 +287,7 @@
     </div>
 
     <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin:16px 0 6px;letter-spacing:0.5px;">Source Quality <span style="font-weight:400;text-transform:none;letter-spacing:0;">(caps download resolution)</span></label>
-    <select id="frameioQualitySelect" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:14px;font-family:var(--font);outline:none;-webkit-appearance:none;appearance:none;">
+    <select id="frameioQualitySelect" aria-label="Source quality" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:14px;font-family:var(--font);outline:none;-webkit-appearance:none;appearance:none;">
       <option value="360">360p — small file</option>
       <option value="540">540p — good for quick clips</option>
       <option value="720">720p — smaller download</option>
@@ -183,18 +300,24 @@
     </div>
 
     <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin:16px 0 6px;letter-spacing:0.5px;">Cookies File <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional — fixes YouTube/TikTok "not a bot" blocks)</span></label>
-    <input type="file" id="cookiesFileInput" accept=".txt" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:13px;font-family:var(--font);outline:none;cursor:pointer;">
+    <input type="file" id="cookiesFileInput" accept=".txt" aria-label="Cookies file" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:13px;font-family:var(--font);outline:none;cursor:pointer;">
     <div id="cookiesFileName" style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.4;"></div>
     <div style="font-size:10px;color:var(--ink-dim);margin-top:4px;line-height:1.4;">How to get one: install a browser extension like "Get cookies.txt LOCALLY", open the site while logged in (e.g. YouTube), and export the cookies as a .txt file. It's only sent with this job (over HTTPS) to authorize the download.</div>
 
     <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin:16px 0 6px;letter-spacing:0.5px;">Your Link <span style="font-weight:400;text-transform:none;letter-spacing:0;">(Vyro profile / affiliate — added to captions)</span></label>
-    <input id="linkInput" type="url" placeholder="https://vyro.club/yourprofile or your affiliate link" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:14px;font-family:var(--font);outline:none;">
+    <input id="linkInput" type="url" placeholder="https://vyro.club/yourprofile or your affiliate link" aria-label="Your link" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:14px;font-family:var(--font);outline:none;">
 
     <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;cursor:pointer;">
       <span style="font-size:11px;font-weight:600;color:var(--ink-dim);letter-spacing:0.5px;">Opus-Style Captions <span style="font-weight:400;text-transform:none;letter-spacing:0;">(burned &amp; animated — words light up as spoken)</span></span>
-      <input type="checkbox" id="burnCaptionsToggle" style="width:20px;height:20px;accent-color:#C97B57;flex-shrink:0;">
+      <input type="checkbox" id="burnCaptionsToggle" aria-label="Burn Opus-style captions" style="width:20px;height:20px;accent-color:#C97B57;flex-shrink:0;">
     </label>
     <div style="font-size:10px;color:var(--ink-dim);margin-top:4px;line-height:1.4;">Adds word-by-word animated captions directly onto the clip (no editing needed). Turn off for clean footage — you add text yourself later.</div>
+
+    <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;cursor:pointer;">
+      <span style="font-size:11px;font-weight:600;color:var(--ink-dim);letter-spacing:0.5px;">Trim dead silence <span style="font-weight:400;text-transform:none;letter-spacing:0;">(auto-cut pauses &amp; gaps)</span></span>
+      <input type="checkbox" id="trimSilenceToggle" aria-label="Trim dead silence" style="width:20px;height:20px;accent-color:#C97B57;flex-shrink:0;">
+    </label>
+    <div style="font-size:10px;color:var(--ink-dim);margin-top:4px;line-height:1.4;">Removes long silences between sentences so clips feel tighter and faster-paced.</div>
 
     <div style="height:1px;background:var(--hairline);margin:18px 0;"></div>
     <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:6px;letter-spacing:0.5px;">Diagnostics <span style="font-weight:400;text-transform:none;letter-spacing:0;">(failure isolation — stays on this device)</span></div>
@@ -227,6 +350,89 @@
     <p style="font-size:13px;color:var(--ink);line-height:1.5;margin:0 0 12px;">Get pinged when processing is done — even when the tab is closed — so you can deploy straight from your phone.</p>
     <button class="btn-small btn-outline" id="pwaNotifyBtn" style="width:100%;">Enable notifications</button>
     <div id="pwaNotifyStatus" style="font-size:12px;color:var(--ink-dim);margin-top:10px;display:none;line-height:1.4;"></div>
+  </div>
+</div>
+
+<!-- Plans modal (payment-ready shell — desktop ≥1025px) -->
+<div class="modal-overlay" id="plansOverlay">
+  <div class="modal">
+    <div class="modal-top">
+      <h3>Pick your plan</h3>
+      <button class="modal-close" id="closePlansBtn">
+        <svg class="icon" width="13" height="13" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="plans-grid">
+      <div class="plan-card">
+        <div class="plan-name">Free</div>
+        <div class="plan-price">$0<small> / forever</small></div>
+        <div class="plan-desc">Try it out. Watermark, limited clips, no priority queue.</div>
+        <div class="plan-feats">
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>3 clips / week</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Watermark on exports</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>720p max</div>
+        </div>
+        <button class="plan-cta" disabled style="opacity:0.55;cursor:default;">Current plan</button>
+      </div>
+
+      <div class="plan-card hot">
+        <div class="plan-pop">MOST POPULAR</div>
+        <div class="plan-name">Pro</div>
+        <div class="plan-price">$14<small> / month</small></div>
+        <div class="plan-desc">For creators shipping every week.</div>
+        <div class="plan-feats">
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Unlimited clips</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>No watermark</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>1080p + all templates</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Priority queue</div>
+        </div>
+        <button class="plan-cta" id="proBtn">Upgrade to Pro</button>
+      </div>
+
+      <div class="plan-card">
+        <div class="plan-name">Studio</div>
+        <div class="plan-price">$39<small> / month</small></div>
+        <div class="plan-desc">Teams, agencies and heavy workflows.</div>
+        <div class="plan-feats">
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Everything in Pro</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>5 team seats</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>4K + brand kits</div>
+        </div>
+        <button class="plan-cta" id="studioBtn">Choose Studio</button>
+      </div>
+    </div>
+
+    <div class="modal-foot">SECURE CHECKOUT VIA STRIPE · CANCEL ANYTIME</div>
+  </div>
+</div>
+
+<!-- Sign-in modal (Supabase Auth — Google OAuth) -->
+<div class="modal-overlay" id="authOverlay">
+  <div class="modal modal-auth">
+    <div class="modal-top">
+      <h3>Sign in to TrimAURA</h3>
+      <button class="modal-close" id="closeAuthBtn" aria-label="Close sign in">
+        <svg class="icon" width="13" height="13" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="auth-body">
+      <div class="auth-brand">
+        <div class="brand-avatar"><span></span></div>
+        <div>
+          <div class="brand-name">TrimAURA</div>
+          <div class="brand-sub">Upload once. Create endlessly.</div>
+        </div>
+      </div>
+      <p class="auth-sub">Your clips, vault and usage are private to your account — sign in with Google to start creating.</p>
+      <button class="google-btn" id="googleSignInBtn">
+        <span class="google-logo" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        </span>
+        <span>Continue with Google</span>
+      </button>
+      <p class="auth-foot">TrimAURA uses Google to sign you in — no password is stored here.</p>
+    </div>
   </div>
 </div>
 
@@ -492,7 +698,11 @@ async function loadTemplates() {
     const res = await fetch('/api/templates');
     templates = await res.json();
   } catch(e) {
-    styleList.innerHTML = '<div style="color:var(--ink-dim);font-size:13px;padding:20px;text-align:center">Could not reach the server.</div>';
+    styleList.innerHTML = `<div class="vault-empty">
+      <span class="vault-empty-icon">🎨</span>
+      <p class="vault-empty-title">Could not load styles</p>
+      <p class="vault-empty-desc">The server didn't respond. Reload the page to try again — clips still generate with the default style.</p>
+    </div>`;
     return;
   }
   styleList.innerHTML = templates.map((t,i) =>
@@ -502,6 +712,8 @@ async function loadTemplates() {
     </div>`
   ).join('');
   styleHint.textContent = templates[0]?.name || 'Blur Pad';
+  const tplCountEl = document.getElementById('tplCount');
+  if (tplCountEl) tplCountEl.textContent = templates.length;
   const chips = styleList.querySelectorAll('.style-chip');
   chips.forEach(el => {
     el.addEventListener('click', () => {
@@ -524,7 +736,11 @@ function renderResults(jobId) {
       const clips = [...(job.clips || [])].sort((a, b) => (b.viral_score ?? -1) - (a.viral_score ?? -1));
       generateMoreBtn.classList.toggle('hidden', job.status !== 'COMPLETED');
       if (clips.length === 0) {
-        resultsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--ink-dim);font-size:12px;">No clips generated</div>';
+        resultsList.innerHTML = `<div class="vault-empty">
+          <span class="vault-empty-icon">⚡</span>
+          <p class="vault-empty-title">No clips generated</p>
+          <p class="vault-empty-desc">This job finished without producing clips. Try again with a different video or template.</p>
+        </div>`;
         resultsCount.textContent = '0 clips';
         return;
       }
@@ -569,7 +785,11 @@ function renderResults(jobId) {
       });
     })
     .catch(() => {
-      resultsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--ink-dim);font-size:12px;">Failed to load results</div>';
+      resultsList.innerHTML = `<div class="vault-empty">
+        <span class="vault-empty-icon">⚠️</span>
+        <p class="vault-empty-title">Could not load results</p>
+        <p class="vault-empty-desc">The server didn't respond. Check your connection and refresh to try again.</p>
+      </div>`;
     });
 }
 
@@ -583,7 +803,7 @@ downloadAllBtn.addEventListener('click', () => {
       job.clips.forEach(c => downloadSingleClip(c.clip_id));
       showToast('Downloads started');
     })
-    .catch(() => showToast('Download failed'));
+    .catch(() => showErrorToast('Download failed'));
 });
 
 // --- Generate More ---
@@ -599,7 +819,7 @@ generateMoreBtn.addEventListener('click', async () => {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      showToast(data.detail || 'Generate more failed');
+      showErrorToast(data.detail || 'Generate more failed');
       generateMoreBtn.disabled = false;
       generateMoreBtn.textContent = '＋ Generate more clips';
       return;
@@ -609,7 +829,7 @@ generateMoreBtn.addEventListener('click', async () => {
     showToast('Generating 3 more clips...');
     startPolling(currentResultsJobId);
   } catch (e) {
-    showToast('Generate more failed');
+    showErrorToast('Generate more failed');
     generateMoreBtn.disabled = false;
     generateMoreBtn.textContent = '＋ Generate more clips';
   }
@@ -669,7 +889,11 @@ async function loadHistory() {
     });
 
   } catch(e) {
-    historyEl.innerHTML = '<div style="color:var(--ink-dim);font-size:13px;text-align:center;padding:20px">Could not reach the server.</div>';
+    historyEl.innerHTML = `<div class="vault-empty">
+      <span class="vault-empty-icon">📡</span>
+      <p class="vault-empty-title">Could not reach the server</p>
+      <p class="vault-empty-desc">TrimAURA's backend is offline or your connection dropped. Reload the page to try again.</p>
+    </div>`;
   }
 }
 
@@ -796,7 +1020,7 @@ generateBtn.addEventListener('click', async () => {
     resultsList.innerHTML = '<div class="loading">Generating clips...</div>';
     startPolling(currentJobId);
   } catch(e) {
-    showToast('Failed to create job');
+    showErrorToast('Failed to create job');
     generateBtn.disabled = false;
     generateBtn.textContent = 'Generate shorts';
     progressWrap.classList.remove('active');
@@ -889,7 +1113,7 @@ async function openDrawer(jobId, focusClipId) {
     drawer.classList.add('open');
     document.body.style.overflow = 'hidden';
   } catch(e) {
-    showToast('Failed to load clip');
+    showErrorToast('Failed to load clip');
   }
 }
 
@@ -1126,7 +1350,7 @@ async function downloadSingleClip(clipId) {
       URL.revokeObjectURL(url);
     }
   } catch {
-    showToast('Download failed');
+    showErrorToast('Download failed');
   }
 }
 
@@ -1208,16 +1432,19 @@ async function togglePosted(key) {
       showToast(data.posted_platforms.includes(key) ? 'Marked as posted ✓' : 'Unmarked');
     }
   } catch {
-    showToast('Could not update posted status');
+    showErrorToast('Could not update posted status');
   }
 }
 
 // --- Helpers ---
-function showToast(msg) {
+function showToast(msg, isError) {
   toast.textContent = msg;
+  toast.classList.toggle('error', !!isError);
   toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 2500);
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toast.classList.remove('show'), 2500);
 }
+function showErrorToast(msg) { showToast(msg, true); }
 
 function timeAgo(iso) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -1362,17 +1589,30 @@ async function enablePushNotifications() {
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') { showToast('Notifications permission was denied'); return; }
     const reg = await navigator.serviceWorker.ready;
-    const res = await fetch('/api/push/vapid-key');
-    const { public_key } = await res.json();
+
+    let public_key;
+    try {
+      const res = await fetch('/api/push/vapid-key');
+      if (!res.ok) throw new Error('vapid ' + res.status);
+      const data = await res.json();
+      public_key = data.public_key;
+    } catch (err) {
+      // Backend unreachable — keep the button enabled and explain inline
+      pwaNotifyStatus.textContent = 'The server is offline right now — connect to the internet, then tap "Enable notifications" again.';
+      pwaNotifyStatus.style.display = 'block';
+      return;
+    }
+
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(public_key)
     });
-    await fetch('/api/push/subscribe', {
+    const subRes = await fetch('/api/push/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sub.toJSON())
     });
+    if (!subRes.ok) throw new Error('subscribe ' + subRes.status);
     pushEnabled = true;
     localStorage.setItem('trimauraPush', '1');
     pwaNotifyBtn.textContent = 'Notifications enabled ✓';
@@ -1380,7 +1620,7 @@ async function enablePushNotifications() {
     pwaNotifyStatus.style.display = 'none';
     showToast('Notifications enabled — we\u2019ll ping you when jobs finish 🔔');
   } catch (err) {
-    showToast('Could not enable push: ' + err.message);
+    showErrorToast('Could not enable push: ' + err.message);
   }
 }
 
@@ -1399,9 +1639,155 @@ loadTemplates();
 loadHistory();
 setInterval(loadHistory, 10000);
 
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/service-worker.js');
+// --- Offline / online indicator (PWA shell) ---
+var offlineBanner = document.getElementById('offlineBanner');
+function updateOnlineState() {
+  if (offlineBanner) offlineBanner.classList.toggle('show', !navigator.onLine);
 }
+window.addEventListener('online', function () {
+  updateOnlineState();
+  if (navigator.onLine) showToast('Back online — reconnecting ✓');
+});
+window.addEventListener('offline', updateOnlineState);
+updateOnlineState();
+
+// --- Service worker: register, keep updated, celebrate installs ---
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js', { updateViaCache: 'none' });
+
+  // Check for SW updates every 30 min and when the tab regains focus
+  setInterval(function () {
+    navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); });
+  }, 30 * 60 * 1000);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') {
+      navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); });
+    }
+  });
+
+  window.addEventListener('appinstalled', function () {
+    showToast('TrimAURA installed — welcome aboard 🎉');
+  });
+}
+</script>
+
+<script>
+// --- Desktop shell wiring (topbar / nav / plans / account — payment-ready placeholders) ---
+(function () {
+  // Collapsible Style / template section (Opus-style)
+  var tplToggle = document.getElementById('tplToggle');
+  var tplWrap = document.getElementById('tplWrap');
+  if (tplToggle && tplWrap) {
+    tplToggle.addEventListener('click', function () {
+      tplWrap.classList.toggle('open');
+      tplToggle.classList.toggle('open');
+    });
+  }
+
+  // Plans modal
+  var plansOverlay = document.getElementById('plansOverlay');
+  var upgradeBtn = document.getElementById('upgradeBtn');
+  function openPlans() { if (plansOverlay) plansOverlay.classList.add('open'); }
+  function closePlans() { if (plansOverlay) plansOverlay.classList.remove('open'); }
+  if (upgradeBtn) upgradeBtn.addEventListener('click', openPlans);
+  var closePlansBtn = document.getElementById('closePlansBtn');
+  if (closePlansBtn) closePlansBtn.addEventListener('click', closePlans);
+  if (plansOverlay) plansOverlay.addEventListener('click', function (e) { if (e.target === plansOverlay) closePlans(); });
+  // Plan CTAs — placeholder until Stripe is wired
+  document.querySelectorAll('.plan-cta').forEach(function (b) {
+    if (b.disabled) return;
+    b.addEventListener('click', function () {
+      closePlans();
+      showToast('Stripe checkout coming soon');
+    });
+  });
+
+  // Account dropdown menu
+  var accountBtn = document.getElementById('accountBtn');
+  var accountMenu = document.getElementById('accountMenu');
+  if (accountBtn && accountMenu) {
+    accountBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (!window.__authToken) {
+        // Guest — the chip opens the sign-in modal instead of the menu
+        if (window.TrimAuraAuth) window.TrimAuraAuth.openAuth('Sign in to use TrimAURA');
+        return;
+      }
+      accountMenu.classList.toggle('open');
+    });
+    document.addEventListener('click', function (e) {
+      if (!accountMenu.contains(e.target)) accountMenu.classList.remove('open');
+    });
+  }
+
+  // Nav tabs
+  var navStudio = document.getElementById('navStudio');
+  var navLibrary = document.getElementById('navLibrary');
+  var navBilling = document.getElementById('navBilling');
+  var navSettings = document.getElementById('navSettings');
+  if (navStudio) navStudio.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+  if (navLibrary) navLibrary.addEventListener('click', function () {
+    var v = document.getElementById('vaultLabel');
+    if (v) v.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  if (navBilling) navBilling.addEventListener('click', openPlans);
+  if (navSettings) navSettings.addEventListener('click', function () { openSettings(); });
+
+  // Account menu actions
+  var menuBilling = document.getElementById('menuBilling');
+  var menuSettings = document.getElementById('menuSettings');
+  var menuSignout = document.getElementById('menuSignout');
+  if (menuBilling) menuBilling.addEventListener('click', function () { accountMenu.classList.remove('open'); openPlans(); });
+  if (menuSettings) menuSettings.addEventListener('click', function () { accountMenu.classList.remove('open'); openSettings(); });
+  if (menuSignout) menuSignout.addEventListener('click', function () {
+    accountMenu.classList.remove('open');
+    if (window.TrimAuraAuth) window.TrimAuraAuth.signOut();
+    else showToast('Auth coming soon');
+  });
+})();
+
+// --- Mobile shell wiring (tab bar / TikTok-style clip arrows / drawer close) ---
+(function () {
+  // Explicit close button inside the clip drawer (reuses existing closeDrawer)
+  var drawerCloseBtn = document.getElementById('drawerCloseBtn');
+  if (drawerCloseBtn) drawerCloseBtn.addEventListener('click', function () { closeDrawer(); });
+
+  // Prev/next arrows drive the existing numbered clip dots
+  var clipNav = document.getElementById('clipNav');
+  var prevClipBtn = document.getElementById('prevClipBtn');
+  var nextClipBtn = document.getElementById('nextClipBtn');
+  function goClip(delta) {
+    var dots = clipNav ? clipNav.querySelectorAll('.clip-dot') : [];
+    if (!dots.length) return;
+    var activeIdx = 0;
+    dots.forEach(function (d, i) { if (d.classList.contains('active')) activeIdx = i; });
+    var target = Math.min(Math.max(activeIdx + delta, 0), dots.length - 1);
+    if (dots[target]) dots[target].click();
+  }
+  if (prevClipBtn) prevClipBtn.addEventListener('click', function () { goClip(-1); });
+  if (nextClipBtn) nextClipBtn.addEventListener('click', function () { goClip(1); });
+
+  // Bottom tab bar — Studio / Library / Settings
+  var tabStudio = document.getElementById('tabStudio');
+  var tabLibrary = document.getElementById('tabLibrary');
+  var tabSettings = document.getElementById('tabSettings');
+  var tabs = [tabStudio, tabLibrary, tabSettings];
+  function setActiveTab(active) {
+    tabs.forEach(function (t) { if (t && t !== active) t.classList.remove('active'); });
+    if (active) active.classList.add('active');
+  }
+  if (tabStudio) tabStudio.addEventListener('click', function () {
+    setActiveTab(tabStudio); window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+  if (tabLibrary) tabLibrary.addEventListener('click', function () {
+    setActiveTab(tabLibrary);
+    var v = document.getElementById('vaultLabel');
+    if (v) v.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  if (tabSettings) tabSettings.addEventListener('click', function () {
+    setActiveTab(tabSettings); openSettings();
+  });
+})();
 </script>
 
 </body>

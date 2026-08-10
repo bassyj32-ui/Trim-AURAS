@@ -86,6 +86,8 @@ image = (
         "python-dotenv>=1.0.1",
         "sentry-sdk>=2.0.0",
         "pywebpush>=1.14.0",
+        # Supabase Auth — server-side JWT verification (app/auth.py)
+        "supabase>=2.10.0",
         # Face-aware crop: OpenCV Haar cascades (bundled with the wheel) — no
         # model downloads, no fragile mediapipe build on Python 3.13. The
         # mediapipe path in face_track.py only activates if it's importable.
