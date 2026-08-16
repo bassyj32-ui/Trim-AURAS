@@ -1,0 +1,1813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#C9A056">
+<meta name="color-scheme" content="light">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TrimAURA">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23C9A056'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%23FFFFFF'%3E%E2%97%80%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="manifest" href="/manifest.json">
+<link rel="stylesheet" href="/styles.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<title>TrimAURA — Upload once. Create endlessly.</title>
+<meta name="description" content="Convert long videos into viral 9:16 shorts with AI subtitles and SEO.">
+<script src="https://browser.sentry-cdn.com/8.0.0/bundle.min.js" crossorigin="anonymous"></script>
+<script>Sentry.init({dsn:"https://4090566c839e1e35cd37ebb1cf2d678b@o4511656889614336.ingest.us.sentry.io/4511656910389248"});</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/auth.js"></script>
+</head>
+<body>
+
+<!-- Offline indicator (PWA shell — slides in when the connection drops) -->
+<div class="offline-banner" id="offlineBanner" role="status" aria-live="polite">
+  <span class="offline-dot"></span>
+  <span>You're offline — showing the saved version</span>
+</div>
+
+<!-- Desktop top header (revealed ≥1025px) -->
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-avatar"><span></span></div>
+    <div>
+      <div class="brand-name">TrimAURA</div>
+      <div class="brand-sub">Upload once. Create endlessly.</div>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="stat-num">1,204</div><div class="stat-label">CLIPS MADE</div></div>
+    <div class="stat-sep"></div>
+    <div class="stat"><div class="stat-num">68%</div><div class="stat-label">WATCH-THROUGH</div></div>
+    <div class="stat-sep"></div>
+    <div class="stat"><div class="stat-num">10K</div><div class="stat-label">REACHED</div></div>
+  </div>
+  <div class="top-actions">
+    <button class="upgrade-btn" id="upgradeBtn">Upgrade</button>
+    <button class="account-chip" id="accountBtn" aria-haspopup="true" aria-label="Sign in">
+      <span class="account-avatar" id="accountAvatar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 10-16 0"/><circle cx="12" cy="7" r="4"/></svg></span>
+      <span class="account-name" id="accountName">Sign in</span>
+      <svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <!-- Account dropdown (auth/payment-ready shell) -->
+    <div class="account-menu" id="accountMenu">
+      <div class="menu-item">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24"><path d="M20 21a8 8 0 10-16 0"/><circle cx="12" cy="7" r="4"/></svg>
+        My account
+      </div>
+      <div class="menu-item gold" id="menuBilling">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18 M7 15h4"/></svg>
+        Billing &amp; plans
+      </div>
+      <div class="menu-item" id="menuSettings">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2 M12 18.8V21 M4.9 4.9l1.6 1.6 M17.5 17.5l1.6 1.6 M3 12h2.2 M18.8 12H21 M4.9 19.1l1.6-1.6 M17.5 6.5l1.6-1.6"/></svg>
+        Settings
+      </div>
+      <div class="menu-sep"></div>
+      <div class="menu-item danger" id="menuSignout">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5 M21 12H9"/></svg>
+        Sign out
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Usage meter (mobile <1025px — compact card under the header) -->
+<div class="usage-card">
+  <span>3 OF 5 CLIPS USED</span>
+  <span class="meter"><i style="width:40%"></i></span>
+</div>
+
+<!-- Desktop secondary nav — future: Library / Billing / Settings (revealed ≥1025px) -->
+<nav class="top-nav">
+  <div class="nav-tabs">
+    <button class="nav-tab active" id="navStudio">Studio</button>
+    <button class="nav-tab" id="navLibrary">Library</button>
+    <button class="nav-tab" id="navBilling">Billing <span class="lock">SOON</span></button>
+    <button class="nav-tab" id="navSettings">Settings</button>
+  </div>
+  <div class="nav-right">3 CLIPS LEFT THIS WEEK <span class="meter"><i style="width:40%"></i></span></div>
+</nav>
+
+<div class="frame-wrapper">
+<div class="frame">
+<div class="scroll">
+<div class="container">
+
+  <!-- LEFT / MOBILE TOP: Studio panel -->
+  <div class="panel panel-studio">
+
+    <!-- Brand Profile (mobile only — desktop brand lives in the topbar) -->
+    <div class="profile reveal" style="animation-delay:0.08s;">
+      <div class="avatar"><div class="avatar-mark"></div></div>
+      <div class="p-name">TrimAURA</div>
+      <div class="p-sub">Upload once. Create endlessly.</div>
+    </div>
+
+    <div class="section-label reveal" style="animation-delay:0.18s;">New short</div>
+
+    <div class="url-field reveal" style="animation-delay:0.2s;">
+      <svg class="icon" width="15" height="15" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+      <input class="url-input" id="urlInput" type="url" placeholder="YouTube, TikTok, Google Drive / Frame.io link" autocomplete="url" aria-label="Video link">
+    </div>
+
+    <div class="divider-or reveal" style="animation-delay:0.22s;">OR</div>
+
+    <div class="upload-card reveal" style="animation-delay:0.24s;" id="uploadZone">
+      <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/x-matroska,.mp4,.mov,.mkv" aria-label="Upload video file">
+      <button class="upload-clear" id="uploadClear" style="display:none" title="Remove file">&times;</button>
+      <div class="upload-icon" id="uploadIcon">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V6 M8 10l4-4 4 4"/><path d="M5 18h14"/></svg>
+      </div>
+      <div class="upload-filename" id="uploadText">Drop your video here or tap to browse</div>
+      <div class="upload-check" id="uploadCheck" style="display:none">
+        <svg class="icon" width="10" height="10" viewBox="0 0 24 24" style="stroke:var(--green)"><path d="M4 12l5 5L20 6"/></svg>
+        READY TO PROCESS
+      </div>
+    </div>
+
+    <!-- CTA Row — sits right under the input, templates collapse below (Opus-style) -->
+    <div class="cta-row reveal" style="animation-delay:0.3s;">
+      <button class="cta" id="generateBtn">Generate shorts</button>
+      <button class="icon-btn" id="downloadAllBtn" title="Download all clips">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V4m0 12-4-4m4 4 4-4"/><path d="M16 20H8"/></svg>
+      </button>
+      <button class="icon-btn" id="pwaInstall" title="Install App / Notifications">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 16V4m0 12-4-4m4 4 4-4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" title="Settings">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2 M12 18.8V21 M4.9 4.9l1.6 1.6 M17.5 17.5l1.6 1.6 M3 12h2.2 M18.8 12H21 M4.9 19.1l1.6-1.6 M17.5 6.5l1.6-1.6"/></svg>
+      </button>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress-track reveal" style="animation-delay:0.34s;" id="progressWrap">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <div class="progress-row reveal" style="animation-delay:0.36s;">
+      <span id="progressStatus">PENDING</span>
+      <span id="progressPct">0%</span>
+    </div>
+
+    <!-- Collapsible Style picker (templates hidden behind toggle) -->
+    <div class="collapse-toggle reveal" id="tplToggle" style="animation-delay:0.4s;">
+      <span class="section-label" style="margin:0;">Style <span class="hint" id="styleHint">Blur Pad</span></span>
+      <span class="collapse-meta"><span class="tpl-count" id="tplCount">—</span>
+        <svg class="icon chevron" width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </span>
+    </div>
+    <div class="tpl-wrap reveal" id="tplWrap" style="animation-delay:0.42s;">
+      <div class="style-row" id="styleList" style="margin-top:12px;">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT / MOBILE BOTTOM: Results + Vault -->
+  <div class="panel panel-content">
+
+    <div class="section-label reveal" style="animation-delay:0.5s;" id="resultsLabel">
+      Results <span class="hint" id="resultsCount"></span>
+    </div>
+
+    <div id="resultsList" class="reveal" style="animation-delay:0.52s;">
+      <div class="vault-empty">
+        <span class="vault-empty-icon">⚡</span>
+        <p class="vault-empty-title">No shorts yet</p>
+        <p class="vault-empty-desc">Paste a link or upload a video above, pick a style, and hit Generate shorts. Your clips will show up here.</p>
+      </div>
+    </div>
+    <button class="ghost-btn reveal hidden" id="generateMoreBtn" style="animation-delay:0.53s;margin-top:12px;width:100%;">＋ Generate more clips</button>
+
+    <div class="section-label reveal" id="vaultLabel" style="animation-delay:0.56s;margin-top:24px;">Clip vault <span class="hint" id="vaultCount">0 pending</span></div>
+
+    <div id="historyList" class="reveal" style="animation-delay:0.58s;">
+      <div class="loading">Loading...</div>
+    </div>
+
+  </div>
+
+</div>
+</div>
+</div>
+</div>
+
+<!-- Bottom tab bar (mobile <1025px — Studio / Library / Settings; Billing lives in the account sheet) -->
+<nav class="tab-bar" aria-label="Primary">
+  <button class="tab active" id="tabStudio">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>
+    Studio
+  </button>
+  <button class="tab" id="tabLibrary">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18 M9 21V9"/></svg>
+    Library
+  </button>
+  <button class="tab" id="tabSettings">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2 M12 18.8V21 M4.9 4.9l1.6 1.6 M17.5 17.5l1.6 1.6 M3 12h2.2 M18.8 12H21 M4.9 19.1l1.6-1.6 M17.5 6.5l1.6-1.6"/></svg>
+    Settings
+  </button>
+</nav>
+
+<!-- Clip Drawer -->
+<div class="drawer-overlay" id="drawerOverlay"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-handle"></div>
+  <div class="drawer-content">
+    <div class="clip-nav" id="clipNav"></div>
+    <div class="clip-stage">
+      <video id="clipVideo" controls playsinline preload="metadata"></video>
+      <button class="car-nav prev" id="prevClipBtn" title="Previous clip" aria-label="Previous clip">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24" style="stroke:#fff"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <button class="car-nav next" id="nextClipBtn" title="Next clip" aria-label="Next clip">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24" style="stroke:#fff"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+      <button class="drawer-close" id="drawerCloseBtn" title="Close" aria-label="Close">
+        <svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-title" id="drawerTitle"></div>
+    <div class="drawer-meta" id="drawerMeta"></div>
+    <div class="drawer-actions">
+      <button class="btn-small btn-primary" id="copyPostBtn">Copy Post Text</button>
+      <button class="btn-small btn-outline" id="refreshSeoBtn">Refresh SEO</button>
+      <button class="btn-small btn-outline" id="openPlayerBtn">Open Player</button>
+      <button class="btn-small btn-outline" id="copyLinkBtn">Copy Link</button>
+      <button class="btn-small btn-outline" id="downloadBtn">Download MP4</button>
+    </div>
+    <div id="trimSection" style="margin-top:18px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="font-size:13px;font-weight:700;">Trim Clip</div>
+        <button class="btn-small btn-primary" id="saveTrimBtn" style="padding:6px 14px;">Save Trim</button>
+      </div>
+      <label style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--ink-dim);margin-bottom:2px;">
+        <span>Start</span><span id="trimStartLabel" style="font-weight:700;color:var(--ink);"></span>
+      </label>
+      <input type="range" id="trimStartSlider" min="0" max="100" value="0" step="0.5" style="width:100%;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;" aria-label="Trim start position">
+      <label style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--ink-dim);margin:10px 0 2px;">
+        <span>End</span><span id="trimEndLabel" style="font-weight:700;color:var(--ink);"></span>
+      </label>
+      <input type="range" id="trimEndSlider" min="0" max="100" value="100" step="0.5" style="width:100%;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;" aria-label="Trim end position">
+      <div id="trimStatus" style="font-size:10px;color:var(--ink-dim);margin-top:6px;line-height:1.4;"></div>
+    </div>
+    <div class="publish-block" style="margin-top:18px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Publish</div>
+      <div id="publishRow" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <div style="font-size:10px;color:var(--ink-dim);margin-top:8px;line-height:1.4;">Each button copies a ready caption, downloads the MP4, and opens the platform's upload page. Tap ✓ after you post so you never double-post.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Settings Panel (inline slide-over) -->
+<div class="drawer-overlay" id="settingsOverlay"></div>
+<div class="drawer" id="settingsPanel" style="max-height:70dvh;">
+  <div class="drawer-handle"></div>
+  <div class="drawer-content" style="padding-bottom:24px;">
+    <div style="font-size:15px;font-weight:700;margin:8px 0 16px;">Campaign Settings</div>
+
+    <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:6px;letter-spacing:0.5px;">Campaign Rules (SEO instructions)</label>
+    <textarea id="campaignRulesInput" rows="3" placeholder="e.g. Use professional tone, include keywords: productivity, AI tools, automation" aria-label="Campaign rules" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:14px;font-family:var(--font);outline:none;resize:vertical;min-height:60px;"></textarea>
+
+    <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin:16px 0 6px;letter-spacing:0.5px;">Max Clips Per Video</label>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <input type="range" id="maxClipsSlider" min="1" max="10" value="5" aria-label="Maximum clips per video" style="flex:1;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;">
+      <span id="maxClipsValue" style="font-size:22px;font-weight:800;color:var(--ink);min-width:28px;text-align:center;">5</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--ink-dim);margin-top:2px;">
+      <span>Cost saving</span>
+      <span>More content</span>
+    </div>
+
+    <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin:16px 0 6px;letter-spacing:0.5px;">Source Quality <span style="font-weight:400;text-transform:none;letter-spacing:0;">(caps download resolution)</span></label>
+    <select id="frameioQualitySelect" aria-label="Source quality" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:14px;font-family:var(--font);outline:none;-webkit-appearance:none;appearance:none;">
+      <option value="360">360p — small file</option>
+      <option value="540">540p — good for quick clips</option>
+      <option value="720">720p — smaller download</option>
+      <option value="1080" selected>1080p — recommended (sharp, full HD)</option>
+      <option value="0">Original — full source file</option>
+    </select>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--ink-dim);margin-top:2px;">
+      <span>Faster, uses less data</span>
+      <span>Best quality</span>
+    </div>
+
+    <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin:16px 0 6px;letter-spacing:0.5px;">Cookies File <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional — fixes YouTube/TikTok "not a bot" blocks)</span></label>
+    <input type="file" id="cookiesFileInput" accept=".txt" aria-label="Cookies file" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:13px;font-family:var(--font);outline:none;cursor:pointer;">
+    <div id="cookiesFileName" style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.4;"></div>
+    <div style="font-size:10px;color:var(--ink-dim);margin-top:4px;line-height:1.4;">How to get one: install a browser extension like "Get cookies.txt LOCALLY", open the site while logged in (e.g. YouTube), and export the cookies as a .txt file. It's only sent with this job (over HTTPS) to authorize the download.</div>
+
+    <label style="display:block;font-size:11px;font-weight:600;color:var(--ink-dim);margin:16px 0 6px;letter-spacing:0.5px;">Your Link <span style="font-weight:400;text-transform:none;letter-spacing:0;">(Vyro profile / affiliate — added to captions)</span></label>
+    <input id="linkInput" type="url" placeholder="https://vyro.club/yourprofile or your affiliate link" aria-label="Your link" style="width:100%;padding:10px 12px;background:#F2EEE6;border:1px solid var(--hairline);border-radius:var(--radius-sm);color:var(--ink);font-size:14px;font-family:var(--font);outline:none;">
+
+    <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;cursor:pointer;">
+      <span style="font-size:11px;font-weight:600;color:var(--ink-dim);letter-spacing:0.5px;">Opus-Style Captions <span style="font-weight:400;text-transform:none;letter-spacing:0;">(burned &amp; animated — words light up as spoken)</span></span>
+      <input type="checkbox" id="burnCaptionsToggle" aria-label="Burn Opus-style captions" style="width:20px;height:20px;accent-color:#C97B57;flex-shrink:0;">
+    </label>
+    <div style="font-size:10px;color:var(--ink-dim);margin-top:4px;line-height:1.4;">Adds word-by-word animated captions directly onto the clip (no editing needed). Turn off for clean footage — you add text yourself later.</div>
+
+    <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;cursor:pointer;">
+      <span style="font-size:11px;font-weight:600;color:var(--ink-dim);letter-spacing:0.5px;">Trim dead silence <span style="font-weight:400;text-transform:none;letter-spacing:0;">(auto-cut pauses &amp; gaps)</span></span>
+      <input type="checkbox" id="trimSilenceToggle" aria-label="Trim dead silence" style="width:20px;height:20px;accent-color:#C97B57;flex-shrink:0;">
+    </label>
+    <div style="font-size:10px;color:var(--ink-dim);margin-top:4px;line-height:1.4;">Removes long silences between sentences so clips feel tighter and faster-paced.</div>
+
+    <div style="height:1px;background:var(--hairline);margin:18px 0;"></div>
+    <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:6px;letter-spacing:0.5px;">Diagnostics <span style="font-weight:400;text-transform:none;letter-spacing:0;">(failure isolation — stays on this device)</span></div>
+    <button class="btn-small btn-outline" id="diagCopyBtn" style="width:100%;margin-bottom:8px;">Copy diagnostics log</button>
+    <button class="btn-small btn-outline" id="diagClearBtn" style="width:100%;">Clear diagnostics</button>
+
+    <div style="display:flex;gap:8px;margin-top:20px;">
+      <button class="btn-small btn-outline" id="modalCancel" style="flex:1;">Cancel</button>
+      <button class="btn-small btn-primary" id="modalConfirm" style="flex:1;">Start Generating</button>
+    </div>
+  </div>
+</div>
+
+<!-- PWA Sheet (Install / Push Notifications) -->
+<div class="drawer-overlay" id="pwaOverlay"></div>
+<div class="drawer" id="pwaSheet" style="max-height:70dvh;">
+  <div class="drawer-handle"></div>
+  <div class="drawer-content" style="padding-bottom:24px;">
+    <div style="font-size:15px;font-weight:700;margin:8px 0 16px;">TrimAURA App</div>
+
+    <div id="pwaInstallSection">
+      <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:6px;letter-spacing:0.5px;">INSTALL ON YOUR PHONE</div>
+      <p id="pwaInstallText" style="font-size:13px;color:var(--ink);line-height:1.5;margin:0 0 12px;"></p>
+      <button class="btn-small btn-primary" id="pwaInstallConfirm" style="width:100%;">Install App</button>
+    </div>
+
+    <div style="height:1px;background:var(--hairline);margin:18px 0;"></div>
+
+    <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:6px;letter-spacing:0.5px;">PUSH NOTIFICATIONS</div>
+    <p style="font-size:13px;color:var(--ink);line-height:1.5;margin:0 0 12px;">Get pinged when processing is done — even when the tab is closed — so you can deploy straight from your phone.</p>
+    <button class="btn-small btn-outline" id="pwaNotifyBtn" style="width:100%;">Enable notifications</button>
+    <div id="pwaNotifyStatus" style="font-size:12px;color:var(--ink-dim);margin-top:10px;display:none;line-height:1.4;"></div>
+  </div>
+</div>
+
+<!-- Plans modal (payment-ready shell — desktop ≥1025px) -->
+<div class="modal-overlay" id="plansOverlay">
+  <div class="modal">
+    <div class="modal-top">
+      <h3>Pick your plan</h3>
+      <button class="modal-close" id="closePlansBtn">
+        <svg class="icon" width="13" height="13" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="plans-grid">
+      <div class="plan-card">
+        <div class="plan-name">Free</div>
+        <div class="plan-price">$0<small> / forever</small></div>
+        <div class="plan-desc">Try it out. Watermark, limited clips, no priority queue.</div>
+        <div class="plan-feats">
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>3 clips / week</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Watermark on exports</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>720p max</div>
+        </div>
+        <button class="plan-cta" disabled style="opacity:0.55;cursor:default;">Current plan</button>
+      </div>
+
+      <div class="plan-card hot">
+        <div class="plan-pop">MOST POPULAR</div>
+        <div class="plan-name">Pro</div>
+        <div class="plan-price">$14<small> / month</small></div>
+        <div class="plan-desc">For creators shipping every week.</div>
+        <div class="plan-feats">
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Unlimited clips</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>No watermark</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>1080p + all templates</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Priority queue</div>
+        </div>
+        <button class="plan-cta" id="proBtn">Upgrade to Pro</button>
+      </div>
+
+      <div class="plan-card">
+        <div class="plan-name">Studio</div>
+        <div class="plan-price">$39<small> / month</small></div>
+        <div class="plan-desc">Teams, agencies and heavy workflows.</div>
+        <div class="plan-feats">
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Everything in Pro</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>5 team seats</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>4K + brand kits</div>
+        </div>
+        <button class="plan-cta" id="studioBtn">Choose Studio</button>
+      </div>
+    </div>
+
+    <div class="modal-foot">SECURE CHECKOUT VIA STRIPE · CANCEL ANYTIME</div>
+  </div>
+</div>
+
+<!-- Sign-in modal (Supabase Auth — Google OAuth) -->
+<div class="modal-overlay" id="authOverlay">
+  <div class="modal modal-auth">
+    <div class="modal-top">
+      <h3>Sign in to TrimAURA</h3>
+      <button class="modal-close" id="closeAuthBtn" aria-label="Close sign in">
+        <svg class="icon" width="13" height="13" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="auth-body">
+      <div class="auth-brand">
+        <div class="brand-avatar"><span></span></div>
+        <div>
+          <div class="brand-name">TrimAURA</div>
+          <div class="brand-sub">Upload once. Create endlessly.</div>
+        </div>
+      </div>
+      <p class="auth-sub">Your clips, vault and usage are private to your account — sign in with Google to start creating.</p>
+      <button class="google-btn" id="googleSignInBtn">
+        <span class="google-logo" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        </span>
+        <span>Continue with Google</span>
+      </button>
+      <p class="auth-foot">TrimAURA uses Google to sign you in — no password is stored here.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- State ---
+let templates = [];
+let currentJobId = null;
+let pollTimer = null;
+let drawerJobId = null;
+let drawerClips = [];
+let drawerClipIndex = 0;
+let selectedClip = null;
+let selectedFile = null;
+let campaignRules = '';
+let maxClips = 5;
+let preferredHeight = 1080;
+let burnCaptions = localStorage.getItem('trimaura_burn_captions') === '1';
+let trimSilence = localStorage.getItem('trimaura_trim_silence') === '1';
+let myLink = localStorage.getItem('trimaura_link') || '';
+let cookiesText = localStorage.getItem('trimaura_cookies') || '';  // restored on reload
+let currentResultsJobId = null;
+
+// --- Diagnostic logging (diag suite: isolate phone-vs-IDE failures) ---
+// Every event goes to console AND to localStorage so it survives a
+// background/reload on the phone. Retrieve via Settings → "Copy diagnostics".
+const DIAG_KEY = 'trimaura_diag';
+function diagLog(event, data) {
+  const entry = Object.assign({ t: Date.now(), iso: new Date().toISOString(), e: event }, data || {});
+  try {
+    const arr = JSON.parse(localStorage.getItem(DIAG_KEY) || '[]');
+    arr.push(entry);
+    if (arr.length > 600) arr.splice(0, arr.length - 600);
+    localStorage.setItem(DIAG_KEY, JSON.stringify(arr));
+  } catch (_) {}
+  if (window.console && console.log) console.log('[diag]', entry);
+}
+// Screen lock / tab switch / app backgrounding — prime suspect for the phone
+// failures. Note the exact job that was active when visibility changed.
+document.addEventListener('visibilitychange', () => {
+  diagLog('visibility', { state: document.visibilityState, job: currentJobId });
+});
+window.addEventListener('online', () => diagLog('network', { state: 'online', job: currentJobId }));
+window.addEventListener('offline', () => diagLog('network', { state: 'offline', job: currentJobId }));
+
+// Template gradient mapping (fallback)
+const templateGradients = {
+  'blurpad_v1': 'linear-gradient(155deg,#E7B5A0,#C97B57)',
+  'brand_bold_v1': 'linear-gradient(155deg,#8FA8C9,#4E6E96)',
+  'gaming_neon_v1': 'linear-gradient(155deg,#B8C98F,#748C4E)',
+  'retro_vhs_v1': 'linear-gradient(155deg,#D9B7E0,#9C6BA8)',
+  'mrbeast_energy_v1': 'linear-gradient(155deg,#E8C778,#9C7530)',
+  'podcast_split_v1': 'linear-gradient(155deg,#8FC9BE,#4E9688)'
+};
+
+// Template preview images (lightweight, ~1.3KB each)
+const templatePreviews = {
+  'blurpad_v1': '/template-previews/blurpad_v1.jpg',
+  'brand_bold_v1': '/template-previews/brand_bold_v1.jpg',
+  'gaming_neon_v1': '/template-previews/gaming_neon_v1.jpg',
+  'retro_vhs_v1': '/template-previews/retro_vhs_v1.jpg',
+  'mrbeast_energy_v1': '/template-previews/mrbeast_energy_v1.jpg',
+  'podcast_split_v1': '/template-previews/podcast_split_v1.jpg'
+};
+
+// --- DOM ---
+const urlInput = document.getElementById('urlInput');
+const fileInput = document.getElementById('fileInput');
+const uploadZone = document.getElementById('uploadZone');
+const uploadIcon = document.getElementById('uploadIcon');
+const uploadText = document.getElementById('uploadText');
+const uploadCheck = document.getElementById('uploadCheck');
+const uploadClear = document.getElementById('uploadClear');
+const styleList = document.getElementById('styleList');
+const styleHint = document.getElementById('styleHint');
+const generateBtn = document.getElementById('generateBtn');
+const progressWrap = document.getElementById('progressWrap');
+const progressFill = document.getElementById('progressFill');
+const progressStatus = document.getElementById('progressStatus');
+const progressPct = document.getElementById('progressPct');
+const resultsList = document.getElementById('resultsList');
+const resultsCount = document.getElementById('resultsCount');
+const generateMoreBtn = document.getElementById('generateMoreBtn');
+const historyEl = document.getElementById('historyList');
+const vaultCount = document.getElementById('vaultCount');
+const drawerOverlay = document.getElementById('drawerOverlay');
+const drawer = document.getElementById('drawer');
+const clipVideo = document.getElementById('clipVideo');
+const clipNav = document.getElementById('clipNav');
+const drawerTitle = document.getElementById('drawerTitle');
+const drawerMeta = document.getElementById('drawerMeta');
+const copyPostBtn = document.getElementById('copyPostBtn');
+const refreshSeoBtn = document.getElementById('refreshSeoBtn');
+const openPlayerBtn = document.getElementById('openPlayerBtn');
+const copyLinkBtn = document.getElementById('copyLinkBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const trimStartSlider = document.getElementById('trimStartSlider');
+const trimEndSlider = document.getElementById('trimEndSlider');
+const trimStartLabel = document.getElementById('trimStartLabel');
+const trimEndLabel = document.getElementById('trimEndLabel');
+const trimStatus = document.getElementById('trimStatus');
+const saveTrimBtn = document.getElementById('saveTrimBtn');
+const downloadAllBtn = document.getElementById('downloadAllBtn');
+const toast = document.getElementById('toast');
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsOverlay = document.getElementById('settingsOverlay');
+const settingsPanel = document.getElementById('settingsPanel');
+const modalCancel = document.getElementById('modalCancel');
+const modalConfirm = document.getElementById('modalConfirm');
+const campaignRulesInput = document.getElementById('campaignRulesInput');
+const maxClipsSlider = document.getElementById('maxClipsSlider');
+const cookiesFileInput = document.getElementById('cookiesFileInput');
+const cookiesFileName = document.getElementById('cookiesFileName');
+const maxClipsValue = document.getElementById('maxClipsValue');
+
+// --- File Upload UI ---
+uploadZone.addEventListener('click', (e) => {
+  if (e.target === uploadZone || e.target.closest('.upload-icon') || e.target.closest('.upload-filename')) {
+    fileInput.click();
+  }
+});
+uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) {
+    fileInput.files = e.dataTransfer.files;
+    handleFileSelect(e.dataTransfer.files[0]);
+  }
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) handleFileSelect(fileInput.files[0]);
+});
+
+function handleFileSelect(file) {
+  selectedFile = file;
+  uploadText.textContent = file.name;
+  uploadCheck.style.display = 'flex';
+  uploadClear.style.display = 'flex';
+  uploadZone.classList.add('has-file');
+  urlInput.value = '';
+}
+
+// --- Upload Clear ---
+uploadClear.addEventListener('click', (e) => {
+  e.stopPropagation();
+  clearUpload();
+});
+
+function clearUpload() {
+  selectedFile = null;
+  uploadText.textContent = 'Drop your video here or tap to browse';
+  uploadCheck.style.display = 'none';
+  uploadClear.style.display = 'none';
+  uploadZone.classList.remove('has-file');
+  fileInput.value = '';
+}
+
+// --- Settings Panel ---
+function openSettings() {
+  campaignRulesInput.value = campaignRules;
+  maxClipsSlider.value = maxClips;
+  maxClipsValue.textContent = maxClips;
+  frameioQualitySelect.value = String(preferredHeight);
+  burnCaptionsToggle.checked = burnCaptions;
+  trimSilenceToggle.checked = trimSilence;
+  linkInput.value = myLink;
+  settingsOverlay.classList.add('open');
+  settingsPanel.classList.add('open');
+}
+
+function closeSettings() {
+  settingsOverlay.classList.remove('open');
+  settingsPanel.classList.remove('open');
+}
+
+settingsBtn.addEventListener('click', openSettings);
+settingsOverlay.addEventListener('click', closeSettings);
+modalCancel.addEventListener('click', closeSettings);
+
+// --- Diagnostics log export (diag suite) ---
+function copyDiagLog() {
+  const arr = JSON.parse(localStorage.getItem(DIAG_KEY) || '[]');
+  const text = arr.map(e => JSON.stringify(e)).join('\n');
+  if (!text) { showToast('No diagnostics recorded yet'); return; }
+  navigator.clipboard.writeText(text).then(
+    () => showToast('Diagnostics copied (' + arr.length + ' events)'),
+    () => showToast('Could not copy — screenshot the console instead')
+  );
+}
+function clearDiagLog() {
+  localStorage.removeItem(DIAG_KEY);
+  showToast('Diagnostics cleared');
+}
+document.getElementById('diagCopyBtn').addEventListener('click', copyDiagLog);
+document.getElementById('diagClearBtn').addEventListener('click', clearDiagLog);
+
+maxClipsSlider.addEventListener('input', () => {
+  maxClipsValue.textContent = maxClipsSlider.value;
+});
+
+// Read an exported cookies.txt into memory AND persist it in this browser,
+// so you only pick the file once (it survives reloads until it expires).
+cookiesFileInput.addEventListener('change', () => {
+  const f = cookiesFileInput.files[0];
+  if (!f) { clearCookies(); return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target.result || '';
+    if (!text.trim()) { clearCookies(); return; }
+    cookiesText = text;
+    let persisted = true;
+    try {
+      if (text.length > 2 * 1024 * 1024) throw new Error('too large for offline storage');
+      localStorage.setItem('trimaura_cookies', cookiesText);
+    } catch (err) {
+      persisted = false;
+      showToast('Cookies too large — used for this session only');
+    }
+    renderCookiesStatus('✓ ' + f.name + ' loaded (' + Math.round(cookiesText.length / 1024) + ' KB)' + (persisted ? ' — saved' : ''));
+  };
+  reader.onerror = () => { clearCookies(); cookiesFileName.textContent = 'Could not read file'; };
+  reader.readAsText(f);
+});
+
+function clearCookies() {
+  cookiesText = '';
+  cookiesFileName.textContent = '';
+  localStorage.removeItem('trimaura_cookies');
+  cookiesFileInput.value = '';
+}
+
+function renderCookiesStatus(msg) {
+  cookiesFileName.textContent = '';
+  const span = document.createElement('span');
+  span.textContent = msg || '';
+  const btn = document.createElement('button');
+  btn.textContent = 'Remove';
+  btn.style.cssText = 'margin-left:8px;background:none;border:none;color:var(--accent-ok,#2e9e5b);font-size:11px;text-decoration:underline;cursor:pointer;';
+  btn.addEventListener('click', clearCookies);
+  cookiesFileName.appendChild(span);
+  cookiesFileName.appendChild(btn);
+}
+
+// On reload: if a saved cookies.txt exists, show it and keep using it
+if (cookiesText) {
+  renderCookiesStatus('Saved cookies loaded (' + Math.round(cookiesText.length / 1024) + ' KB) — replacing this file updates it');
+}
+
+modalConfirm.addEventListener('click', () => {
+  campaignRules = campaignRulesInput.value.trim();
+  maxClips = parseInt(maxClipsSlider.value);
+  preferredHeight = parseInt(frameioQualitySelect.value);
+  myLink = linkInput.value.trim();
+  localStorage.setItem('trimaura_link', myLink);
+  closeSettings();
+  showToast('Settings saved: ' + maxClips + ' clips max');
+});
+
+// --- Style Picker — Circular Chips ---
+async function loadTemplates() {
+  try {
+    const res = await fetch('/api/templates');
+    templates = await res.json();
+  } catch(e) {
+    styleList.innerHTML = `<div class="vault-empty">
+      <span class="vault-empty-icon">🎨</span>
+      <p class="vault-empty-title">Could not load styles</p>
+      <p class="vault-empty-desc">The server didn't respond. Reload the page to try again — clips still generate with the default style.</p>
+    </div>`;
+    return;
+  }
+  styleList.innerHTML = templates.map((t,i) =>
+    `<div class="style-chip${i===0?' active':''}" data-id="${t.id}">
+      <div class="style-swatch" style="background-image:url('${templatePreviews[t.id]||''}');background:${templateGradients[t.id]||'linear-gradient(155deg,#E7B5A0,#C97B57)'}"></div>
+      <div class="style-name">${escHtml(t.name)}</div>
+    </div>`
+  ).join('');
+  styleHint.textContent = templates[0]?.name || 'Blur Pad';
+  const tplCountEl = document.getElementById('tplCount');
+  if (tplCountEl) tplCountEl.textContent = templates.length;
+  const chips = styleList.querySelectorAll('.style-chip');
+  chips.forEach(el => {
+    el.addEventListener('click', () => {
+      chips.forEach(c => c.classList.remove('active'));
+      el.classList.add('active');
+      el.scrollIntoView({behavior:'smooth', inline:'center', block:'nearest'});
+      const name = el.querySelector('.style-name').textContent;
+      styleHint.textContent = name;
+    });
+  });
+}
+
+// --- Results Section ---
+function renderResults(jobId) {
+  currentResultsJobId = jobId;
+  fetch(`/api/jobs/${jobId}`)
+    .then(r => r.json())
+    .then(job => {
+      // Best-first: viral score desc, un-scored clips last
+      const clips = [...(job.clips || [])].sort((a, b) => (b.viral_score ?? -1) - (a.viral_score ?? -1));
+      generateMoreBtn.classList.toggle('hidden', job.status !== 'COMPLETED');
+      if (clips.length === 0) {
+        resultsList.innerHTML = `<div class="vault-empty">
+          <span class="vault-empty-icon">⚡</span>
+          <p class="vault-empty-title">No clips generated</p>
+          <p class="vault-empty-desc">This job finished without producing clips. Try again with a different video or template.</p>
+        </div>`;
+        resultsCount.textContent = '0 clips';
+        return;
+      }
+      resultsCount.textContent = clips.length + ' clip' + (clips.length !== 1 ? 's' : '');
+      resultsList.innerHTML = clips.map((c,i) => {
+        const score = c.viral_score;
+        const scoreColor = score == null ? '' : (score >= 80 ? 'var(--accent-ok,#2e9e5b)' : score >= 60 ? 'var(--accent-warn,#d99a2b)' : 'var(--ink-dim)');
+        return `<div class="result-row" data-clip-id="${c.clip_id}" data-job-id="${jobId}">
+          <div class="result-score">
+            <div class="result-score-num" style="${score != null ? 'color:' + scoreColor : ''}">${score != null ? score : (i+1)}</div>
+            <div class="result-score-label">${score != null ? 'Score' : 'Clip'}</div>
+          </div>
+          <div class="result-thumb" style="background-image:url('${templatePreviews[job.template_id]||''}');background:${templateGradients[job.template_id]||'linear-gradient(155deg,#E7B5A0,#C97B57)'}">
+            <svg class="icon result-play" width="13" height="13" viewBox="0 0 24 24" style="stroke:#fff"><path d="M8 5l11 7-11 7Z"/></svg>
+          </div>
+          <div class="result-body">
+            <div class="result-title">${escHtml(c.titles?.curiosity || c.description || 'Clip ' + c.clip_id)}</div>
+            <div class="result-meta">
+              <span>${c.duration || '0'}s</span>
+              <span>${c.reason || 'Viral clip'}</span>
+            </div>
+          </div>
+          <button class="result-action" data-clip-id="${c.clip_id}" title="Download">
+            <svg class="icon" width="12" height="12" viewBox="0 0 24 24" style="stroke:#fff"><path d="M12 16V4m0 12-4-4m4 4 4-4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+          </button>
+        </div>`;
+      }).join('');
+
+      // Click card → open drawer
+      resultsList.querySelectorAll('.result-row').forEach(el => {
+        el.addEventListener('click', (e) => {
+          if (e.target.closest('.result-action')) return;
+          openDrawer(parseInt(el.dataset.jobId), parseInt(el.dataset.clipId));
+        });
+      });
+      // Click download button
+      resultsList.querySelectorAll('.result-action').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          downloadSingleClip(parseInt(btn.dataset.clipId));
+        });
+      });
+    })
+    .catch(() => {
+      resultsList.innerHTML = `<div class="vault-empty">
+        <span class="vault-empty-icon">⚠️</span>
+        <p class="vault-empty-title">Could not load results</p>
+        <p class="vault-empty-desc">The server didn't respond. Check your connection and refresh to try again.</p>
+      </div>`;
+    });
+}
+
+// --- Download All ---
+downloadAllBtn.addEventListener('click', () => {
+  if (!currentResultsJobId) { showToast('Generate clips first'); return; }
+  fetch(`/api/jobs/${currentResultsJobId}`)
+    .then(r => r.json())
+    .then(job => {
+      if (!job.clips || job.clips.length === 0) { showToast('No clips to download'); return; }
+      job.clips.forEach(c => downloadSingleClip(c.clip_id));
+      showToast('Downloads started');
+    })
+    .catch(() => showErrorToast('Download failed'));
+});
+
+// --- Generate More ---
+generateMoreBtn.addEventListener('click', async () => {
+  if (!currentResultsJobId) return;
+  generateMoreBtn.disabled = true;
+  generateMoreBtn.textContent = 'Generating more...';
+  try {
+    const res = await fetch(`/api/jobs/${currentResultsJobId}/generate-more`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count: 3 })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showErrorToast(data.detail || 'Generate more failed');
+      generateMoreBtn.disabled = false;
+      generateMoreBtn.textContent = '＋ Generate more clips';
+      return;
+    }
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Processing...';
+    showToast('Generating 3 more clips...');
+    startPolling(currentResultsJobId);
+  } catch (e) {
+    showErrorToast('Generate more failed');
+    generateMoreBtn.disabled = false;
+    generateMoreBtn.textContent = '＋ Generate more clips';
+  }
+});
+
+// --- Vault / History ---
+function renderSignInCta() {
+  historyEl.innerHTML = `<div class="vault-empty">
+    <span class="vault-empty-icon">🔐</span>
+    <p class="vault-empty-title">Sign in to see your clips</p>
+    <p class="vault-empty-desc">Your generated shorts live here once you sign in with Google.</p>
+    <button class="btn-small btn-primary" id="vaultSignInBtn" style="margin-top:6px;">Sign in</button>
+  </div>`;
+  var b = document.getElementById('vaultSignInBtn');
+  if (b) b.addEventListener('click', function () {
+    if (window.TrimAuraAuth) window.TrimAuraAuth.openAuth('Sign in to see your clips');
+    else showToast('Sign in coming soon');
+  });
+}
+
+async function loadHistory() {
+  try {
+    const [jobsRes, clipsRes] = await Promise.all([
+      fetch('/api/jobs'),
+      fetch('/api/clips')
+    ]);
+    // 401 = not signed in (or session gone) — show the sign-in prompt, not a server error
+    if (jobsRes.status === 401 || clipsRes.status === 401) {
+      renderSignInCta();
+      return;
+    }
+    if (!jobsRes.ok || !clipsRes.ok) throw new Error('API unavailable');
+    const jobs = await jobsRes.json();
+    const clips = await clipsRes.json();
+
+    const pendingCount = jobs.filter(j => j.status !== 'COMPLETED' && j.status !== 'FAILED').length;
+    vaultCount.textContent = pendingCount + ' pending';
+
+    if (jobs.length === 0) {
+      historyEl.innerHTML = `<div class="vault-empty">
+        <span class="vault-empty-icon">🎬</span>
+        <p class="vault-empty-title">Welcome to TrimAURA</p>
+        <p class="vault-empty-desc">Paste a YouTube, TikTok, Google Drive or Frame.io link, upload a video, pick a template, and generate shorts with AI-powered captions and SEO.</p>
+        <div class="vault-empty-steps">
+          <div class="vault-step"><span class="vault-step-num">1</span> Add your video</div>
+          <div class="vault-step"><span class="vault-step-num">2</span> Pick a template</div>
+          <div class="vault-step"><span class="vault-step-num">3</span> Generate &amp; share</div>
+        </div>
+      </div>`;
+      return;
+    }
+
+    historyEl.innerHTML = jobs.map(j => {
+      const isCompleted = j.status === 'COMPLETED';
+      const jobClips = clips.filter(c => c.job_id === j.job_id);
+      const gradient = templateGradients[j.template_id] || 'linear-gradient(155deg,#E7B5A0,#C97B57)';
+      return `
+      <div class="vault-item" data-id="${j.job_id}">
+        <div class="vault-thumb" style="background-image:url('${templatePreviews[j.template_id]||''}');background:${gradient}"></div>
+        <div class="vault-body">
+          <div class="vault-name">${escHtml(j.title)}</div>
+          <div class="vault-meta-row">
+            <div class="vault-meta">${j.clips_count} clip${j.clips_count!==1?'s':''}</div>
+            <div class="vault-meta">${timeAgo(j.created_at)}</div>
+          </div>
+        </div>
+        ${isCompleted ? `<span class="vault-status vault-status-COMPLETED">READY</span>` : `<span class="vault-status vault-status-${j.status}">${j.status}</span>`}
+      </div>`;
+    }).join('');
+
+    // Wire history item click → open drawer
+    historyEl.querySelectorAll('.vault-item').forEach(el => {
+      el.addEventListener('click', () => {
+        openDrawer(parseInt(el.dataset.id));
+      });
+    });
+
+  } catch(e) {
+    historyEl.innerHTML = `<div class="vault-empty">
+      <span class="vault-empty-icon">📡</span>
+      <p class="vault-empty-title">Could not reach the server</p>
+      <p class="vault-empty-desc">TrimAURA's backend is offline or your connection dropped. Reload the page to try again.</p>
+    </div>`;
+  }
+}
+
+// --- Submit Job ---
+generateBtn.addEventListener('click', async () => {
+  const templateId = styleList.querySelector('.style-chip.active')?.dataset.id || 'auto';
+  const hasFile = selectedFile !== null;
+  const url = urlInput.value.trim();
+
+  if (!hasFile && !url) { showToast('Select a file or enter a video link (YouTube, TikTok, etc.)'); return; }
+  if (url && !/^https?:\/\//i.test(url)) { showToast('Enter a valid link starting with http:// or https://'); return; }
+
+  generateBtn.disabled = true;
+  progressWrap.classList.add('active');
+
+  try {
+    let res;
+    if (hasFile) {
+      generateBtn.textContent = 'Uploading...';
+      setProgress('UPLOADING', 0);
+      diagLog('upload_start', { name: selectedFile.name, size: selectedFile.size, mime: selectedFile.type });
+
+      // Practical upload guard: Modal's gateway is only reliable up to ~45MB
+      // from this network; beyond that uploads enter its 303 retry protocol and
+      // may fail. Warn early instead of failing mid-upload.
+      if (selectedFile.size > 47 * 1024 * 1024) {
+        showToast('File is ' + Math.round(selectedFile.size / 1048576) + ' MB - recommended input is H.264 MP4 under ~40 MB. Very large files may fail to upload; compress first if it fails.');
+      }
+
+      const form = new FormData();
+      form.append('file', selectedFile);
+      form.append('template_id', templateId);
+      form.append('campaign_rules', campaignRules);
+      form.append('max_clips', maxClips.toString());
+      form.append('preferred_height', String(preferredHeight));
+      form.append('burn_captions', burnCaptions ? 'true' : 'false');
+      form.append('trim_silence', trimSilence ? 'true' : 'false');
+
+      res = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/jobs/upload');
+        let lastLoggedPct = -1;
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            if (pct >= lastLoggedPct + 10) {
+              lastLoggedPct = pct;
+              diagLog('upload_progress', { pct, mb: Math.round(e.loaded / 1048576) });
+            }
+            setProgress('UPLOADING', pct);
+            generateBtn.textContent = `Uploading ${pct}%`;
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            diagLog('upload_done', { status: xhr.status });
+            resolve(new Response(xhr.response, { status: xhr.status, headers: { 'Content-Type': 'application/json' } }));
+          } else if (xhr.status === 303) {
+            // Modal gateway large-request protocol: it answers a big upload with
+            // 303 + Location carrying __modal_attempt_token. The client must
+            // re-POST the SAME body to that Location to get the real response.
+            // (redirect:'manual' stops the browser from following the 303 as a
+            // body-less GET, which would drop the upload.)
+            const loc = xhr.getResponseHeader('Location');
+            diagLog('upload_303_retry', { loc: (loc || '').slice(0, 100) });
+            if (!loc) {
+              diagLog('upload_error', { status: xhr.status, body: 'no Location header' });
+              reject(new Error('Upload failed (' + xhr.status + ')'));
+              return;
+            }
+            fetch(loc, { method: 'POST', body: form, redirect: 'manual' })
+              .then((r) => {
+                if (r.status >= 200 && r.status < 300) {
+                  diagLog('upload_done', { status: r.status, via: 'retry' });
+                  resolve(r);
+                } else {
+                  diagLog('upload_error', { status: r.status, via: 'retry', body: '' });
+                  reject(new Error('Upload failed (' + r.status + ')'));
+                }
+              })
+              .catch(() => {
+                diagLog('upload_error', { status: 'network', via: 'retry' });
+                reject(new Error('Upload failed'));
+              });
+          } else {
+            diagLog('upload_error', { status: xhr.status, body: String(xhr.response).slice(0, 300) });
+            reject(new Error('Upload failed (' + xhr.status + ')'));
+          }
+        };
+        xhr.onerror = () => {
+          diagLog('upload_error', { status: 'network' });
+          reject(new Error('Upload failed'));
+        };
+        xhr.send(form);
+      });
+    } else {
+      generateBtn.textContent = 'Processing...';
+      setProgress('PENDING', 0);
+      diagLog('job_create', { url: url.slice(0, 120), template: templateId });
+      res = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          title: url.split('/').pop() || 'Untitled',
+          source_url: url,
+          template_id: templateId,
+          campaign_rules: campaignRules,
+          max_clips: maxClips,
+          preferred_height: preferredHeight,
+          burn_captions: burnCaptions,
+          trim_silence: trimSilence,
+          cookies: cookiesText || null
+        })
+      });
+    }
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => '');
+      diagLog('job_create_error', { status: res.status, body: bodyText.slice(0, 300) });
+    }
+    const data = await res.json();
+    currentJobId = data.job_id;
+    diagLog('job_created', { job: data.job_id });
+    generateBtn.textContent = 'Processing...';
+    resultsList.innerHTML = '<div class="loading">Generating clips...</div>';
+    startPolling(currentJobId);
+  } catch(e) {
+    showErrorToast('Failed to create job');
+    generateBtn.disabled = false;
+    generateBtn.textContent = 'Generate shorts';
+    progressWrap.classList.remove('active');
+  }
+});
+
+// --- Polling ---
+// NOTE (diag): this uses setInterval(…, 2000), which browsers throttle
+// heavily when the tab is backgrounded or the screen is locked (iOS Safari
+// can pause it entirely). The poll_gap log below measures that directly:
+// with a 2s interval, any gap >5s proves the page's timers were throttled.
+function startPolling(jobId) {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  diagLog('poll_start', { job: jobId });
+  let lastPollAt = Date.now();
+
+  pollTimer = setInterval(async () => {
+    const now = Date.now();
+    const gap = now - lastPollAt;
+    lastPollAt = now;
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/poll`);
+      if (!res.ok) {
+        diagLog('poll_http_error', { job: jobId, status: res.status });
+        return;
+      }
+      const data = await res.json();
+      if (gap > 5000) diagLog('poll_gap', { job: jobId, ms: gap }); // throttled!
+      diagLog('poll_resp', { job: jobId, status: data.status, progress: data.progress, gap_ms: gap });
+      setProgress(data.status, data.progress);
+
+      if (data.status === 'COMPLETED') {
+        diagLog('poll_terminal', { job: jobId, status: 'COMPLETED' });
+        clearInterval(pollTimer);
+        pollTimer = null;
+        generateBtn.disabled = false;
+        generateBtn.textContent = 'Generate shorts';
+        generateMoreBtn.disabled = false;
+        generateMoreBtn.textContent = '＋ Generate more clips';
+        progressWrap.classList.remove('active');
+        clearUpload();
+        renderResults(jobId);
+        loadHistory();
+        showToast('Shorts generated!');
+        sendNotification('TrimAURA', '✅ Shorts generated! Your clips are ready.');
+      }
+      if (data.status === 'FAILED') {
+        diagLog('poll_terminal', { job: jobId, status: 'FAILED', error: data.error || '' });
+        clearInterval(pollTimer);
+        pollTimer = null;
+        generateBtn.disabled = false;
+        generateBtn.textContent = 'Generate shorts';
+        generateMoreBtn.disabled = false;
+        generateMoreBtn.textContent = '＋ Generate more clips';
+        resultsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--red);font-size:12px;">Generation failed: ' + (data.error || 'Unknown error') + '</div>';
+        showToast('Failed: ' + (data.error || 'Unknown error'));
+        if (!pushEnabled) sendNotification('TrimAURA', '❌ Generation failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch(e) {
+      diagLog('poll_error', { job: jobId, err: String((e && e.message) || e) });
+      // Silently retry
+    }
+  }, 2000);
+}
+
+function setProgress(status, pct) {
+  progressFill.style.width = pct + '%';
+  progressStatus.textContent = status;
+  progressPct.textContent = pct + '%';
+}
+
+// --- Drawer ---
+async function openDrawer(jobId, focusClipId) {
+  try {
+    const res = await fetch(`/api/jobs/${jobId}`);
+    const job = await res.json();
+    const clips = job.clips;
+    if (clips.length === 0) { showToast('No clips available'); return; }
+
+    drawerJobId = jobId;
+    drawerClips = clips;
+
+    // If focusClipId provided, start at that clip
+    const startIndex = focusClipId ? clips.findIndex(c => c.clip_id === focusClipId) : 0;
+    drawerClipIndex = startIndex >= 0 ? startIndex : 0;
+
+    renderClipNav();
+    selectClip(drawerClipIndex);
+    drawerOverlay.classList.add('open');
+    drawer.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  } catch(e) {
+    showErrorToast('Failed to load clip');
+  }
+}
+
+function renderClipNav() {
+  clipNav.innerHTML = drawerClips.map((c, i) =>
+    `<button class="clip-dot${i===drawerClipIndex?' active':''}" data-index="${i}">${i+1}</button>`
+  ).join('');
+  clipNav.querySelectorAll('.clip-dot').forEach(el => {
+    el.addEventListener('click', () => selectClip(parseInt(el.dataset.index)));
+  });
+}
+
+function selectClip(index) {
+  drawerClipIndex = index;
+  selectedClip = drawerClips[index];
+  showClip(selectedClip);
+  clipNav.querySelectorAll('.clip-dot').forEach((d, i) => {
+    d.classList.toggle('active', i === index);
+  });
+}
+
+function showClip(clip) {
+  clipVideo.src = `/api/clips/${clip.clip_id}/download`;
+  clipVideo.load();
+  drawerTitle.textContent = clip.titles?.curiosity || clip.description || 'Clip ' + clip.clip_id;
+  drawerMeta.textContent = (clip.viral_score != null ? 'Score ' + clip.viral_score + '/100 · ' : '') + (clip.duration || '0') + 's' + (clip.hashtags ? ' · ' + clip.hashtags : '');
+  downloadBtn.onclick = () => downloadSingleClip(clip.clip_id);
+  openPlayerBtn.onclick = () => window.open(`/clip.html?id=${clip.clip_id}`, '_blank');
+  copyLinkBtn.onclick = () => {
+    const url = `${location.origin}/clip.html?id=${clip.clip_id}`;
+    navigator.clipboard.writeText(url).then(
+      () => showToast('Clip link copied'),
+      () => showToast('Copy failed — long-press the player link instead')
+    );
+  };
+  initTrimControls(clip);
+  renderPublishPanel();
+}
+
+// --- Trim Clip ---
+function initTrimControls(clip) {
+  const start = clip.start_time || 0;
+  const end = clip.end_time || 0;
+  trimCtx = { start, end };
+  trimStartSlider.value = 0;
+  trimEndSlider.value = 100;
+  saveTrimBtn.disabled = false;
+  saveTrimBtn.textContent = 'Save Trim';
+  trimStatus.textContent = 'Original: ' + start.toFixed(1) + 's – ' + end.toFixed(1) + 's. Drag to cut dead air — the clip can only get shorter.';
+  updateTrimLabels();
+}
+
+function trimValues() {
+  const d = Math.max((trimCtx.end - trimCtx.start), 1);
+  const newStart = trimCtx.start + d * (parseFloat(trimStartSlider.value) / 100);
+  const newEnd = trimCtx.start + d * (parseFloat(trimEndSlider.value) / 100);
+  return { newStart, newEnd };
+}
+
+function updateTrimLabels() {
+  const { newStart, newEnd } = trimValues();
+  trimStartLabel.textContent = newStart.toFixed(1) + 's';
+  trimEndLabel.textContent = newEnd.toFixed(1) + 's';
+}
+
+trimStartSlider.addEventListener('input', () => {
+  if (parseFloat(trimStartSlider.value) > parseFloat(trimEndSlider.value)) {
+    trimStartSlider.value = trimEndSlider.value;
+  }
+  updateTrimLabels();
+});
+
+trimEndSlider.addEventListener('input', () => {
+  if (parseFloat(trimEndSlider.value) < parseFloat(trimStartSlider.value)) {
+    trimEndSlider.value = trimStartSlider.value;
+  }
+  updateTrimLabels();
+});
+
+saveTrimBtn.addEventListener('click', async () => {
+  if (!selectedClip || !trimCtx) return;
+  const { newStart, newEnd } = trimValues();
+  const minLen = 1;
+  if (newEnd - newStart < minLen) {
+    showToast('Clip too short — keep at least ' + minLen + 's');
+    return;
+  }
+  // Sliders are clamped to the original bounds, so newStart >= start
+  // and newEnd <= end by construction; enforce anyway for safety.
+  if (newStart < trimCtx.start - 0.05 || newEnd > trimCtx.end + 0.05) {
+    showToast('Trim can only shorten the clip');
+    return;
+  }
+  const clipId = selectedClip.clip_id;
+  saveTrimBtn.disabled = true;
+  saveTrimBtn.textContent = 'Rendering...';
+  trimStatus.textContent = 'Re-rendering clip from the source video — this takes a moment...';
+  try {
+    const res = await fetch(`/api/clips/${clipId}/trim`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start: newStart, end: newEnd })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.detail || 'Trim failed');
+      saveTrimBtn.disabled = false;
+      saveTrimBtn.textContent = 'Save Trim';
+      trimStatus.textContent = '';
+      return;
+    }
+    showToast('Trimming clip...');
+    await waitForTrimDone(clipId);
+  } catch (e) {
+    showToast('Trim request failed');
+    saveTrimBtn.disabled = false;
+    saveTrimBtn.textContent = 'Save Trim';
+    trimStatus.textContent = '';
+  }
+});
+
+function waitForTrimDone(clipId) {
+  return new Promise((resolve) => {
+    if (!drawerJobId) { resolve(); return; }
+    let seenRendering = false;
+    let elapsed = 0;
+    const timer = setInterval(async () => {
+      elapsed += 1500;
+      if (elapsed > 150000) { // 2.5 min safety cap
+        clearInterval(timer);
+        trimStatus.textContent = 'Trim timed out — check the clip again shortly.';
+        saveTrimBtn.disabled = false;
+        saveTrimBtn.textContent = 'Save Trim';
+        showToast('Trim timed out');
+        resolve();
+        return;
+      }
+      try {
+        const res = await fetch(`/api/jobs/${drawerJobId}/poll`);
+        const data = await res.json();
+        if (data.status === 'RENDERING') seenRendering = true;
+        diagLog('trim_poll', { job: drawerJobId, status: data.status, clip: clipId });
+        if (data.status === 'FAILED') {
+          clearInterval(timer);
+          trimStatus.textContent = 'Trim failed: ' + (data.error || 'Unknown error');
+          saveTrimBtn.disabled = false;
+          saveTrimBtn.textContent = 'Save Trim';
+          showToast('Trim failed');
+          resolve();
+          return;
+        }
+        // Ignore the initial COMPLETED (worker hasn't started yet); only
+        // finish once we saw RENDERING and the job returned to COMPLETED.
+        if (data.status === 'COMPLETED' && seenRendering) {
+          clearInterval(timer);
+          await refreshDrawerClip(clipId);
+          showToast('Clip trimmed & re-rendered!');
+          resolve();
+        }
+      } catch (e) { diagLog('trim_poll_error', { job: drawerJobId, err: String((e && e.message) || e) }); /* keep polling */ }
+    }, 1500);
+  });
+}
+
+async function refreshDrawerClip(clipId) {
+  try {
+    const res = await fetch(`/api/jobs/${drawerJobId}`);
+    const job = await res.json();
+    drawerClips = job.clips || drawerClips;
+    const idx = drawerClips.findIndex(c => c.clip_id === clipId);
+    if (idx >= 0) {
+      drawerClipIndex = idx;
+      selectedClip = drawerClips[idx];
+      renderClipNav();
+      showClip(selectedClip);
+    }
+    if (currentResultsJobId) renderResults(currentResultsJobId);
+    loadHistory();
+  } catch (e) { /* non-fatal */ }
+}
+
+drawerOverlay.addEventListener('click', closeDrawer);
+
+function closeDrawer() {
+  drawerOverlay.classList.remove('open');
+  drawer.classList.remove('open');
+  document.body.style.overflow = '';
+  clipVideo.pause();
+}
+
+// --- Refresh SEO ---
+refreshSeoBtn.addEventListener('click', async () => {
+  if (!selectedClip) return;
+  const clipId = selectedClip.clip_id;
+  refreshSeoBtn.disabled = true;
+  refreshSeoBtn.textContent = 'Refreshing...';
+  try {
+    const res = await fetch(`/api/clips/${clipId}/refresh-seo`, { method: 'POST' });
+    const data = await res.json();
+    selectedClip.titles = data.titles;
+    selectedClip.description = data.description;
+    selectedClip.hashtags = data.hashtags;
+    drawerTitle.textContent = data.titles?.curiosity || 'Clip ' + clipId;
+    drawerMeta.textContent = (selectedClip.viral_score != null ? 'Score ' + selectedClip.viral_score + '/100 · ' : '') + (selectedClip.duration || '0') + 's' + (data.hashtags ? ' · ' + data.hashtags : '');
+    showToast('SEO refreshed!');
+  } catch {
+    showToast('Refresh failed');
+  } finally {
+    refreshSeoBtn.disabled = false;
+    refreshSeoBtn.textContent = 'Refresh SEO';
+  }
+});
+
+// --- Download ---
+async function downloadSingleClip(clipId) {
+  try {
+    const res = await fetch(`/api/clips/${clipId}/download`);
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('json')) {
+      const data = await res.json();
+      if (data.download_url) {
+        const a = document.createElement('a');
+        a.href = data.download_url;
+        a.download = `trimaura_clip_${clipId}.mp4`;
+        a.click();
+      }
+    } else {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `trimaura_clip_${clipId}.mp4`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  } catch {
+    showErrorToast('Download failed');
+  }
+}
+
+// --- Copy ---
+copyPostBtn.addEventListener('click', () => {
+  if (!selectedClip) return;
+  const title = (selectedClip.titles && (selectedClip.titles.curiosity || selectedClip.titles.direct)) || '';
+  const tags = selectedClip.hashtags || '';
+  const text = [title, tags].filter(Boolean).join('\n\n');
+  copyText(text, 'Post text copied!');
+});
+
+async function copyText(text, msg) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(msg);
+  } catch {
+    showToast('Copy failed');
+  }
+}
+
+// --- Publish Kit ---
+const PUBLISH_PLATFORMS = [
+  { key: 'tiktok',    label: 'Post to TikTok', url: 'https://www.tiktok.com/upload',           color: '#010101', maxTags: 4, shorts: false },
+  { key: 'youtube',   label: 'Post to Shorts', url: 'https://www.youtube.com/upload',          color: '#CC0000', maxTags: 3, shorts: true  },
+  { key: 'instagram', label: 'Post to Reels',  url: 'https://www.instagram.com/reels/upload/', color: '#C13584', maxTags: 5, shorts: false },
+];
+
+function buildCaption(platform, clip) {
+  const title = (clip.titles && (clip.titles.curiosity || clip.titles.direct)) || 'New short';
+  const tags = (clip.hashtags || '').split(/\s+/).filter(Boolean).slice(0, platform.maxTags).join(' ');
+  const link = myLink ? '\n\n' + myLink : '';
+  if (platform.key === 'youtube') return title + '\n\n#shorts' + (tags ? '\n' + tags : '') + link;
+  if (platform.key === 'instagram') return title + link + (tags ? '\n\n' + tags : '');
+  return title + (tags ? '\n\n' + tags : '') + link; // tiktok
+}
+
+function postedList(clip) {
+  return Array.isArray(clip.posted_platforms) ? clip.posted_platforms : [];
+}
+
+function renderPublishPanel() {
+  const row = document.getElementById('publishRow');
+  if (!row || !selectedClip) return;
+  const posted = postedList(selectedClip);
+  row.innerHTML = PUBLISH_PLATFORMS.map(p => {
+    const done = posted.includes(p.key);
+    return `<div style="display:flex;align-items:center;gap:8px;">
+      <button class="btn-small btn-primary" data-pub="${p.key}" style="flex:1;background:${p.color};border-color:${p.color};justify-content:center;">${p.label}</button>
+      <button class="btn-small btn-outline" data-toggle="${p.key}" style="min-width:56px;${done ? 'background:var(--accent);border-color:var(--accent);color:#fff;' : ''}">${done ? '✓ Posted' : 'Mark'}</button>
+    </div>`;
+  }).join('');
+  row.querySelectorAll('[data-pub]').forEach(b => b.addEventListener('click', () => postToPlatform(b.dataset.pub)));
+  row.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => togglePosted(b.dataset.toggle)));
+}
+
+async function postToPlatform(key) {
+  if (!selectedClip) return;
+  const p = PUBLISH_PLATFORMS.find(x => x.key === key);
+  if (!p) return;
+  const caption = buildCaption(p, selectedClip);
+  await copyText(caption, 'Caption copied — go post it!');
+  downloadSingleClip(selectedClip.clip_id);
+  window.open(p.url, '_blank');
+}
+
+async function togglePosted(key) {
+  if (!selectedClip) return;
+  try {
+    const res = await fetch(`/api/clips/${selectedClip.clip_id}/posted`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform: key })
+    });
+    const data = await res.json();
+    if (data.posted_platforms) {
+      selectedClip.posted_platforms = data.posted_platforms;
+      renderPublishPanel();
+      showToast(data.posted_platforms.includes(key) ? 'Marked as posted ✓' : 'Unmarked');
+    }
+  } catch {
+    showErrorToast('Could not update posted status');
+  }
+}
+
+// --- Helpers ---
+function showToast(msg, isError) {
+  toast.textContent = msg;
+  toast.classList.toggle('error', !!isError);
+  toast.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toast.classList.remove('show'), 2500);
+}
+function showErrorToast(msg) { showToast(msg, true); }
+
+function timeAgo(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return 'yesterday';
+  if (days < 7) return days + 'd ago';
+  return new Date(iso).toLocaleDateString();
+}
+
+function escHtml(s) { if (s === null || s === undefined) return ''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// --- Notification ---
+function sendNotification(title, body) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'granted') {
+    new Notification(title, { body, icon: '/icon-192.png', badge: '/icon-192.png' });
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then(perm => {
+      if (perm === 'granted') {
+        new Notification(title, { body, icon: '/icon-192.png', badge: '/icon-192.png' });
+      }
+    });
+  }
+}
+
+// --- PWA Install + Push Notifications ---
+let deferredPrompt = null;
+let pushEnabled = localStorage.getItem('trimauraPush') === '1';
+
+const pwaInstallBtn = document.getElementById('pwaInstall');
+const pwaOverlay = document.getElementById('pwaOverlay');
+const pwaSheet = document.getElementById('pwaSheet');
+const pwaInstallSection = document.getElementById('pwaInstallSection');
+const pwaInstallText = document.getElementById('pwaInstallText');
+const pwaInstallConfirm = document.getElementById('pwaInstallConfirm');
+const pwaNotifyBtn = document.getElementById('pwaNotifyBtn');
+const pwaNotifyStatus = document.getElementById('pwaNotifyStatus');
+
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+function openPwaSheet() {
+  pwaOverlay.classList.add('open');
+  pwaSheet.classList.add('open');
+  renderPwaSheet();
+}
+
+function closePwaSheet() {
+  pwaOverlay.classList.remove('open');
+  pwaSheet.classList.remove('open');
+}
+
+pwaOverlay.addEventListener('click', closePwaSheet);
+
+function renderPwaSheet() {
+  if (isStandalone) {
+    pwaInstallSection.style.display = 'none';
+  } else if (deferredPrompt) {
+    pwaInstallText.textContent = 'Install TrimAURA on this device for a full-screen app experience.';
+    pwaInstallConfirm.textContent = 'Install App';
+    pwaInstallConfirm.style.display = 'block';
+  } else if (isIOS) {
+    pwaInstallText.textContent = 'On iPhone/iPad: tap the Share button (square with arrow) in Safari, scroll down and tap "Add to Home Screen", then open TrimAURA from your Home Screen.';
+    pwaInstallConfirm.textContent = 'Add to Home Screen';
+    pwaInstallConfirm.style.display = 'block';
+  } else {
+    pwaInstallText.textContent = 'Use your browser\u2019s "Add to Home Screen" / "Install App" menu to install TrimAURA on this device.';
+    pwaInstallConfirm.style.display = 'none';
+  }
+
+  if (pushEnabled) {
+    pwaNotifyBtn.textContent = 'Notifications enabled ✓';
+    pwaNotifyBtn.disabled = true;
+  } else {
+    pwaNotifyBtn.textContent = 'Enable notifications';
+    pwaNotifyBtn.disabled = false;
+  }
+}
+
+pwaInstallConfirm.addEventListener('click', async () => {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    const result = await deferredPrompt.userChoice;
+    if (result.outcome === 'accepted') {
+      deferredPrompt = null;
+      closePwaSheet();
+    }
+    return;
+  }
+  if (isIOS) {
+    closePwaSheet();
+    showToast('📱 Safari → Share → Add to Home Screen');
+  }
+});
+
+pwaInstallBtn.addEventListener('click', () => {
+  if (isStandalone) { showToast('You\u2019re using the installed app 🎉'); return; }
+  if (deferredPrompt) {
+    // Android/Chrome: fire the native install prompt straight away
+    deferredPrompt.prompt();
+    deferredPrompt = null;
+    return;
+  }
+  openPwaSheet();
+});
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+});
+
+// --- Push subscription ---
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = window.atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+async function enablePushNotifications() {
+  if (!('Notification' in window) || !('PushManager' in window)) {
+    showToast('Push notifications aren\u2019t supported on this browser');
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    showToast('Notifications are blocked — allow them in your browser settings');
+    return;
+  }
+  if (isIOS && !isStandalone) {
+    pwaNotifyStatus.textContent = 'On iPhone, notifications work inside the installed app. Add TrimAURA to your Home Screen first (above), then open it from there and enable notifications.';
+    pwaNotifyStatus.style.display = 'block';
+    return;
+  }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { showToast('Notifications permission was denied'); return; }
+    const reg = await navigator.serviceWorker.ready;
+
+    let public_key;
+    try {
+      const res = await fetch('/api/push/vapid-key');
+      if (!res.ok) throw new Error('vapid ' + res.status);
+      const data = await res.json();
+      public_key = data.public_key;
+    } catch (err) {
+      // Backend unreachable — keep the button enabled and explain inline
+      pwaNotifyStatus.textContent = 'The server is offline right now — connect to the internet, then tap "Enable notifications" again.';
+      pwaNotifyStatus.style.display = 'block';
+      return;
+    }
+
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(public_key)
+    });
+    const subRes = await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sub.toJSON())
+    });
+    if (!subRes.ok) throw new Error('subscribe ' + subRes.status);
+    pushEnabled = true;
+    localStorage.setItem('trimauraPush', '1');
+    pwaNotifyBtn.textContent = 'Notifications enabled ✓';
+    pwaNotifyBtn.disabled = true;
+    pwaNotifyStatus.style.display = 'none';
+    showToast('Notifications enabled — we\u2019ll ping you when jobs finish 🔔');
+  } catch (err) {
+    showErrorToast('Could not enable push: ' + err.message);
+  }
+}
+
+pwaNotifyBtn.addEventListener('click', enablePushNotifications);
+
+// iOS hint — show once so users notice the install button
+if (isIOS && !isStandalone && !localStorage.getItem('trimauraIosHint')) {
+  setTimeout(() => {
+    showToast('📱 Tap the download icon to install TrimAURA');
+    localStorage.setItem('trimauraIosHint', '1');
+  }, 2500);
+}
+
+// --- Init ---
+loadTemplates();
+loadHistory();
+setInterval(loadHistory, 10000);
+
+// --- Offline / online indicator (PWA shell) ---
+var offlineBanner = document.getElementById('offlineBanner');
+function updateOnlineState() {
+  if (offlineBanner) offlineBanner.classList.toggle('show', !navigator.onLine);
+}
+window.addEventListener('online', function () {
+  updateOnlineState();
+  if (navigator.onLine) showToast('Back online — reconnecting ✓');
+});
+window.addEventListener('offline', updateOnlineState);
+updateOnlineState();
+
+// --- Service worker: register, keep updated, celebrate installs ---
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js', { updateViaCache: 'none' });
+
+  // Check for SW updates every 30 min and when the tab regains focus
+  setInterval(function () {
+    navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); });
+  }, 30 * 60 * 1000);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') {
+      navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); });
+    }
+  });
+
+  window.addEventListener('appinstalled', function () {
+    showToast('TrimAURA installed — welcome aboard 🎉');
+  });
+}
+</script>
+
+<script>
+// --- Desktop shell wiring (topbar / nav / plans / account — payment-ready placeholders) ---
+(function () {
+  // Collapsible Style / template section (Opus-style)
+  var tplToggle = document.getElementById('tplToggle');
+  var tplWrap = document.getElementById('tplWrap');
+  if (tplToggle && tplWrap) {
+    tplToggle.addEventListener('click', function () {
+      tplWrap.classList.toggle('open');
+      tplToggle.classList.toggle('open');
+    });
+  }
+
+  // Plans modal
+  var plansOverlay = document.getElementById('plansOverlay');
+  var upgradeBtn = document.getElementById('upgradeBtn');
+  function openPlans() { if (plansOverlay) plansOverlay.classList.add('open'); }
+  function closePlans() { if (plansOverlay) plansOverlay.classList.remove('open'); }
+  if (upgradeBtn) upgradeBtn.addEventListener('click', openPlans);
+  var closePlansBtn = document.getElementById('closePlansBtn');
+  if (closePlansBtn) closePlansBtn.addEventListener('click', closePlans);
+  if (plansOverlay) plansOverlay.addEventListener('click', function (e) { if (e.target === plansOverlay) closePlans(); });
+  // Plan CTAs — placeholder until Stripe is wired
+  document.querySelectorAll('.plan-cta').forEach(function (b) {
+    if (b.disabled) return;
+    b.addEventListener('click', function () {
+      closePlans();
+      showToast('Stripe checkout coming soon');
+    });
+  });
+
+  // Account dropdown menu
+  var accountBtn = document.getElementById('accountBtn');
+  var accountMenu = document.getElementById('accountMenu');
+  if (accountBtn && accountMenu) {
+    accountBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (!window.__authToken) {
+        // Guest — the chip opens the sign-in modal instead of the menu
+        if (window.TrimAuraAuth) window.TrimAuraAuth.openAuth('Sign in to use TrimAURA');
+        return;
+      }
+      accountMenu.classList.toggle('open');
+    });
+    document.addEventListener('click', function (e) {
+      if (!accountMenu.contains(e.target)) accountMenu.classList.remove('open');
+    });
+  }
+
+  // Nav tabs
+  var navStudio = document.getElementById('navStudio');
+  var navLibrary = document.getElementById('navLibrary');
+  var navBilling = document.getElementById('navBilling');
+  var navSettings = document.getElementById('navSettings');
+  if (navStudio) navStudio.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+  if (navLibrary) navLibrary.addEventListener('click', function () {
+    var v = document.getElementById('vaultLabel');
+    if (v) v.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  if (navBilling) navBilling.addEventListener('click', openPlans);
+  if (navSettings) navSettings.addEventListener('click', function () { openSettings(); });
+
+  // Account menu actions
+  var menuBilling = document.getElementById('menuBilling');
+  var menuSettings = document.getElementById('menuSettings');
+  var menuSignout = document.getElementById('menuSignout');
+  if (menuBilling) menuBilling.addEventListener('click', function () { accountMenu.classList.remove('open'); openPlans(); });
+  if (menuSettings) menuSettings.addEventListener('click', function () { accountMenu.classList.remove('open'); openSettings(); });
+  if (menuSignout) menuSignout.addEventListener('click', function () {
+    accountMenu.classList.remove('open');
+    if (window.TrimAuraAuth) window.TrimAuraAuth.signOut();
+    else showToast('Auth coming soon');
+  });
+})();
+
+// --- Mobile shell wiring (tab bar / TikTok-style clip arrows / drawer close) ---
+(function () {
+  // Explicit close button inside the clip drawer (reuses existing closeDrawer)
+  var drawerCloseBtn = document.getElementById('drawerCloseBtn');
+  if (drawerCloseBtn) drawerCloseBtn.addEventListener('click', function () { closeDrawer(); });
+
+  // Prev/next arrows drive the existing numbered clip dots
+  var clipNav = document.getElementById('clipNav');
+  var prevClipBtn = document.getElementById('prevClipBtn');
+  var nextClipBtn = document.getElementById('nextClipBtn');
+  function goClip(delta) {
+    var dots = clipNav ? clipNav.querySelectorAll('.clip-dot') : [];
+    if (!dots.length) return;
+    var activeIdx = 0;
+    dots.forEach(function (d, i) { if (d.classList.contains('active')) activeIdx = i; });
+    var target = Math.min(Math.max(activeIdx + delta, 0), dots.length - 1);
+    if (dots[target]) dots[target].click();
+  }
+  if (prevClipBtn) prevClipBtn.addEventListener('click', function () { goClip(-1); });
+  if (nextClipBtn) nextClipBtn.addEventListener('click', function () { goClip(1); });
+
+  // Bottom tab bar — Studio / Library / Settings
+  var tabStudio = document.getElementById('tabStudio');
+  var tabLibrary = document.getElementById('tabLibrary');
+  var tabSettings = document.getElementById('tabSettings');
+  var tabs = [tabStudio, tabLibrary, tabSettings];
+  function setActiveTab(active) {
+    tabs.forEach(function (t) { if (t && t !== active) t.classList.remove('active'); });
+    if (active) active.classList.add('active');
+  }
+  if (tabStudio) tabStudio.addEventListener('click', function () {
+    setActiveTab(tabStudio); window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+  if (tabLibrary) tabLibrary.addEventListener('click', function () {
+    setActiveTab(tabLibrary);
+    var v = document.getElementById('vaultLabel');
+    if (v) v.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  if (tabSettings) tabSettings.addEventListener('click', function () {
+    setActiveTab(tabSettings); openSettings();
+  });
+})();
+</script>
+
+</body>
+</html>

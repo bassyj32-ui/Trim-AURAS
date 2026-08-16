@@ -1,0 +1,1 @@
+ALTER TABLE job ADD COLUMN IF NOT EXISTS burn_captions boolean NOT NULL DEFAULT false;

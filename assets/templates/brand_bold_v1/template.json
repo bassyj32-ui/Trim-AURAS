@@ -1,0 +1,28 @@
+{
+  "id": "brand_bold_v1",
+  "name": "Brand Bold v1",
+  "description": "Professional #2 'Bold' style — clean white serif text, gold accents, elegant frame. Built for business, finance, and coaching content.",
+  "genres": ["business", "finance", "marketing", "entrepreneur", "startup", "money", "investing", "stock", "crypto", "real estate", "sales", "brand", "career", "side hustle", "passive income", "wealth", "founder", "ceo", "strategy", "sales"],
+  "canvas": { "width": 1080, "height": 1920, "fps": 30 },
+  "video_slot": {
+    "width": 1080, "height": 1920,
+    "x_offset": 0, "y_offset": 0,
+    "fit_mode": "cover"
+  },
+  "overlay_image": "overlay.png",
+  "color_grade": {
+    "brightness": 0.01, "contrast": 1.05,
+    "saturation": 1.0, "gamma": 1.0
+  },
+  "ken_burns": {
+    "enabled": true, "zoom_start": 1.0, "zoom_end": 1.03
+  },
+  "subtitles": {
+    "alignment": 2, "margin_v": 180,
+    "font_name": "Georgia", "font_size": 28,
+    "primary_color": "&H00FFFFFF",
+    "highlight_color": "&H00D4AF37",
+    "outline_color": "&H00333333",
+    "outline_width": 2
+  }
+}

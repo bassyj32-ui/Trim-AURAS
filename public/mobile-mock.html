@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TrimAURA — Mobile / PWA Mock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#EDE9E3; --card:#FBF9F6; --hairline:#DDD5C8;
+    --ink:#1C1917; --ink-dim:#8A8378;
+    --gold:#C9A056; --gold-deep:#9C7530;
+    --green:#3A9D5E; --green-bg:rgba(58,157,94,0.1);
+    --radius:18px; --radius-sm:12px;
+    --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --mono:'IBM Plex Mono',monospace;
+  }
+  html,body{height:100%}
+  body{font-family:var(--font);background:#D5CFC4;color:var(--ink);line-height:1.55;-webkit-font-smoothing:antialiased;}
+  svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
+
+  /* --- Stage: centered phone frame --- */
+  .stage{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:30px 16px;}
+  .stage-note{font-family:var(--mono);font-size:10.5px;color:#6E675A;letter-spacing:0.4px;text-align:center;}
+  .stage-note b{color:var(--gold-deep);}
+  .demo-btn{
+    padding:9px 18px;border-radius:30px;border:none;cursor:pointer;
+    background:var(--ink);color:#fff;font-size:11.5px;font-weight:700;font-family:var(--font);
+    box-shadow:0 4px 14px rgba(0,0,0,0.25);
+  }
+  .demo-btn:hover{background:#000;}
+
+  .frame{
+    width:390px;height:844px;background:var(--bg);
+    border-radius:44px;border:10px solid #F4F1EC;outline:1px solid #CFC7B8;
+    box-shadow:0 40px 90px rgba(0,0,0,0.35);
+    position:relative;overflow:hidden;display:flex;flex-direction:column;
+  }
+  /* notch / status hint */
+  .frame::before{
+    content:'';position:absolute;top:6px;left:50%;transform:translateX(-50%);
+    width:110px;height:22px;background:#1A1814;border-radius:14px;z-index:50;
+  }
+
+  /* --- In-frame top bar --- */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:36px 18px 12px;
+  }
+  .brand{display:flex;align-items:center;gap:9px;}
+  .brand-avatar{
+    width:30px;height:30px;border-radius:50%;background:var(--ink);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .brand-avatar span{width:10px;height:10px;background:var(--gold);clip-path:polygon(50% 0%,100% 50%,50% 100%,0% 50%);}
+  .brand-name{font-size:14.5px;font-weight:800;letter-spacing:-0.2px;}
+  .top-right{display:flex;align-items:center;gap:10px;}
+  .upgrade-btn{
+    padding:8px 14px;border-radius:30px;border:none;cursor:pointer;
+    background:linear-gradient(135deg,var(--gold),var(--gold-deep));color:#fff;
+    font-size:11px;font-weight:800;font-family:var(--font);letter-spacing:0.3px;
+    box-shadow:0 3px 10px rgba(156,117,48,0.35);
+  }
+  .account-avatar{
+    width:30px;height:30px;border-radius:50%;background:var(--ink);color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-size:10px;font-weight:800;letter-spacing:0.5px;
+  }
+
+  /* --- Usage meter card --- */
+  .usage-card{
+    margin:2px 18px 12px;padding:9px 14px;border-radius:12px;
+    background:var(--card);border:1px solid var(--hairline);
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+  }
+  .usage-card span{font-family:var(--mono);font-size:9px;color:var(--ink-dim);letter-spacing:0.4px;}
+  .usage-card .meter{width:90px;height:5px;background:var(--hairline);border-radius:4px;overflow:hidden;}
+  .usage-card .meter i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-deep));border-radius:4px;}
+
+  /* --- Scrollable content --- */
+  .phone-scroll{flex:1;overflow-y:auto;padding:4px 18px 26px;scrollbar-width:none;}
+  .phone-scroll::-webkit-scrollbar{display:none;}
+
+  .section-label{
+    font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;
+    color:var(--ink-dim);margin:14px 2px 8px;display:flex;justify-content:space-between;align-items:center;
+  }
+  .section-label .hint{color:var(--gold-deep);font-weight:700;}
+  .section-label:first-child{margin-top:0;}
+
+  /* --- URL (high visibility) --- */
+  .url-field{
+    background:#fff;border:1.5px solid #B9AE9C;border-radius:30px;
+    padding:13px 16px;display:flex;align-items:center;gap:9px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.05);transition:all .2s;
+  }
+  .url-field:focus-within{border-color:var(--gold-deep);box-shadow:0 0 0 3px rgba(201,160,86,0.18);}
+  .url-field svg{color:var(--gold-deep);flex-shrink:0;}
+  .url-field input{width:100%;border:none;background:transparent;font-size:12.5px;font-family:var(--font);color:var(--ink);outline:none;}
+  .url-field input::placeholder{color:#9A9284;font-weight:500;}
+  .divider-or{display:flex;align-items:center;gap:10px;margin:12px 0;font-size:9px;color:var(--ink-dim);font-weight:600;letter-spacing:1px;}
+  .divider-or::before,.divider-or::after{content:'';flex:1;height:1px;background:var(--hairline);}
+
+  /* --- Upload (high visibility) --- */
+  .upload-card{
+    background:#fff;border:2px dashed var(--gold-deep);border-radius:16px;
+    padding:16px;text-align:center;cursor:pointer;transition:all .2s;box-shadow:0 2px 8px rgba(0,0,0,0.05);
+  }
+  .upload-card:active{transform:scale(0.99);}
+  .upload-icon{
+    width:38px;height:38px;border-radius:50%;margin:0 auto 8px;
+    background:rgba(201,160,86,0.14);border:1px solid rgba(201,160,86,0.4);
+    display:flex;align-items:center;justify-content:center;color:var(--gold-deep);
+  }
+  .upload-filename{font-family:var(--mono);font-size:11.5px;font-weight:700;}
+  .upload-hint{font-size:9.5px;color:var(--ink-dim);margin-top:2px;}
+  .upload-btn{display:inline-block;margin-top:9px;padding:7px 16px;border-radius:20px;background:var(--ink);color:#fff;font-size:10.5px;font-weight:700;}
+
+  /* --- Generate CTA (above templates) --- */
+  .cta{
+    width:100%;padding:14px;border-radius:30px;border:none;margin-top:14px;
+    background:var(--ink);color:#fff;font-size:13.5px;font-weight:800;font-family:var(--font);
+    cursor:pointer;transition:all .18s;
+  }
+  .cta:active{transform:scale(0.98);}
+  .progress-track{height:4px;background:var(--hairline);border-radius:10px;margin:10px 0 5px;overflow:hidden;}
+  .progress-fill{height:100%;width:45%;background:linear-gradient(90deg,var(--gold),var(--gold-deep));border-radius:10px;}
+  .progress-row{display:flex;justify-content:space-between;font-size:9px;color:var(--ink-dim);font-weight:600;font-family:var(--mono);letter-spacing:0.3px;}
+
+  /* --- Collapsible templates --- */
+  .collapse-toggle{display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;margin-top:14px;}
+  .collapse-meta{display:flex;align-items:center;gap:8px;}
+  .tpl-count{font-family:var(--mono);font-size:9px;color:var(--ink-dim);background:var(--bg);border:1px solid var(--hairline);padding:2px 8px;border-radius:20px;}
+  .chevron{transition:transform .3s ease;color:var(--ink-dim);}
+  .collapse-toggle.open .chevron{transform:rotate(180deg);}
+  .tpl-wrap{max-height:0;overflow:hidden;transition:max-height .4s ease;}
+  .tpl-wrap.open{max-height:420px;}
+  .tpl-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}
+  .tpl-card{border-radius:12px;overflow:hidden;border:1.5px solid var(--hairline);position:relative;cursor:pointer;}
+  .tpl-card.active{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,160,86,0.15);}
+  .tpl-thumb{aspect-ratio:9/10;background-size:cover;background-position:center;}
+  .tpl-name{font-size:9.5px;font-weight:700;padding:6px 9px;background:var(--card);border-top:1px solid var(--hairline);display:flex;justify-content:space-between;align-items:center;}
+  .tpl-check{color:var(--green);display:none;}
+  .tpl-card.active .tpl-check{display:block;}
+
+  /* --- Results (mobile list) --- */
+  .results-head{display:flex;align-items:center;justify-content:space-between;margin:18px 2px 10px;}
+  .results-head h2{font-size:14px;font-weight:800;letter-spacing:-0.2px;}
+  .results-head .meta{font-family:var(--mono);font-size:9px;color:var(--ink-dim);}
+  .clip-row{
+    display:flex;gap:12px;padding:10px;margin-bottom:10px;
+    background:var(--card);border:1px solid var(--hairline);border-radius:16px;cursor:pointer;transition:all .18s;
+  }
+  .clip-row:active{transform:scale(0.99);}
+  .clip-thumb{
+    width:60px;aspect-ratio:9/16;border-radius:10px;background-size:cover;background-position:center;
+    position:relative;flex-shrink:0;
+  }
+  .clip-score{
+    position:absolute;top:5px;left:5px;font-family:var(--mono);font-size:8px;font-weight:700;
+    background:rgba(0,0,0,0.65);color:#fff;padding:2px 6px;border-radius:10px;letter-spacing:0.3px;
+  }
+  .clip-body{flex:1;min-width:0;display:flex;flex-direction:column;}
+  .clip-title{font-size:12px;font-weight:700;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .clip-meta{display:flex;align-items:center;gap:8px;margin-top:auto;font-family:var(--mono);font-size:8.5px;color:var(--ink-dim);}
+  .clip-dl{
+    width:28px;height:28px;border-radius:50%;background:var(--ink);color:#fff;border:none;
+    display:flex;align-items:center;justify-content:center;margin-left:auto;flex-shrink:0;cursor:pointer;
+  }
+
+  /* --- Vault --- */
+  .vault-head{display:flex;align-items:center;justify-content:space-between;margin:18px 2px 10px;}
+  .vault-head h2{font-size:14px;font-weight:800;letter-spacing:-0.2px;}
+  .vault-head .meta{font-family:var(--mono);font-size:9px;color:var(--ink-dim);}
+  .vault-item{display:flex;align-items:center;gap:11px;padding:10px;margin-bottom:8px;background:var(--card);border:1px solid var(--hairline);border-radius:14px;}
+  .vault-thumb{width:40px;height:40px;border-radius:9px;background-size:cover;background-position:center;flex-shrink:0;}
+  .vault-body{flex:1;min-width:0;}
+  .vault-name{font-size:11.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .vault-meta{font-family:var(--mono);font-size:8.5px;color:var(--ink-dim);margin-top:1px;}
+  .vault-status{flex-shrink:0;font-family:var(--mono);font-size:8px;letter-spacing:0.5px;padding:4px 10px;border-radius:20px;color:var(--green);background:var(--green-bg);}
+  .vault-status.pending{color:var(--ink-dim);background:#F2EEE6;}
+
+  /* --- Bottom tab bar (PWA pattern) --- */
+  .tab-bar{
+    flex-shrink:0;display:flex;padding:8px 10px calc(10px + env(safe-area-inset-bottom));
+    background:rgba(251,249,246,0.95);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border-top:1px solid var(--hairline);
+  }
+  .tab{
+    flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+    font-size:9px;font-weight:600;color:var(--ink-dim);letter-spacing:0.3px;cursor:pointer;padding:4px 0;
+  }
+  .tab.active{color:var(--ink);font-weight:700;}
+  .tab.active svg{color:var(--gold-deep);}
+  .tab .lock{font-family:var(--mono);font-size:7px;font-weight:700;background:var(--bg);border:1px solid var(--hairline);color:var(--ink-dim);padding:0px 5px;border-radius:8px;}
+
+  /* --- Bottom sheet (inset, all corners rounded) --- */
+  .sheet-backdrop{
+    position:absolute;inset:0;background:rgba(28,25,23,0.45);
+    backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
+    opacity:0;pointer-events:none;transition:opacity .3s;z-index:80;
+  }
+  .sheet-backdrop.open{opacity:1;pointer-events:auto;}
+  .sheet{
+    position:absolute;left:10px;right:10px;bottom:10px;z-index:81;
+    background:var(--card);border-radius:20px;padding:18px 16px 20px;
+    transform:translateY(115%);transition:transform .35s cubic-bezier(0.22,1,0.36,1);
+    max-height:72%;overflow-y:auto;box-shadow:0 -10px 40px rgba(0,0,0,0.25);
+  }
+  .sheet.open{transform:translateY(0);}
+  .sheet::-webkit-scrollbar{display:none;}
+  .sheet-handle{width:40px;height:4px;background:var(--hairline);border-radius:4px;margin:0 auto 14px;}
+  .sheet-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .sheet-top h3{font-size:14.5px;font-weight:800;letter-spacing:-0.2px;}
+  .sheet-close{width:28px;height:28px;border-radius:50%;border:1px solid var(--hairline);background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--ink-dim);cursor:pointer;}
+  .sheet-foot{text-align:center;font-size:8.5px;color:var(--ink-dim);margin-top:14px;font-family:var(--mono);letter-spacing:0.4px;}
+
+  .plan-row{
+    display:flex;align-items:center;gap:12px;padding:12px;border-radius:14px;
+    border:1px solid var(--hairline);margin-bottom:10px;cursor:pointer;transition:all .15s;
+  }
+  .plan-row.hot{border-color:var(--gold);background:#FFFDF8;box-shadow:0 4px 14px rgba(201,160,86,0.15);}
+  .plan-row .pop{font-size:8px;font-weight:800;color:var(--gold-deep);letter-spacing:0.6px;}
+  .plan-name{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0.3px;color:var(--ink-dim);}
+  .plan-row.hot .plan-name{color:var(--gold-deep);}
+  .plan-price{font-size:20px;font-weight:800;letter-spacing:-0.4px;}
+  .plan-price small{font-size:9.5px;font-weight:600;color:var(--ink-dim);}
+  .plan-desc{flex:1;font-size:9.5px;color:var(--ink-dim);line-height:1.5;}
+  .plan-feat{margin-top:4px;font-size:9px;font-weight:600;color:var(--ink);display:flex;gap:6px;align-items:center;}
+  .plan-feat svg{color:var(--green);}
+  .plan-cta{flex-shrink:0;padding:9px 16px;border-radius:20px;border:none;background:var(--ink);color:#fff;font-size:10.5px;font-weight:700;font-family:var(--font);cursor:pointer;}
+  .plan-row.hot .plan-cta{background:linear-gradient(135deg,var(--gold),var(--gold-deep));}
+
+  /* --- Sheet components (menu / settings / clip) --- */
+  .sheet-avatar-area{display:flex;align-items:center;gap:12px;padding:8px 4px 14px;border-bottom:1px solid var(--hairline);margin-bottom:6px;}
+  .sheet-avatar-area .account-avatar{width:42px;height:42px;font-size:13px;}
+  .menu-row{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:13px 4px;font-size:12.5px;font-weight:600;border-bottom:1px solid var(--hairline);cursor:pointer;
+  }
+  .menu-row:last-child{border-bottom:none;}
+  .menu-row .left{display:flex;align-items:center;gap:11px;}
+  .menu-row svg{color:var(--ink-dim);}
+  .menu-row.gold{color:var(--gold-deep);}
+  .menu-row.gold svg{color:var(--gold-deep);}
+  .menu-row.danger{color:var(--red);}
+  .menu-row.danger svg{color:var(--red);}
+  .menu-row .chev{color:var(--hairline);}
+  .setting-row{display:flex;align-items:center;justify-content:space-between;padding:12px 4px;border-bottom:1px solid var(--hairline);cursor:pointer;}
+  .setting-row:last-child{border-bottom:none;}
+  .setting-row .lbl{font-size:12px;font-weight:600;}
+  .setting-row .sub{font-size:9px;color:var(--ink-dim);margin-top:1px;}
+  .toggle{width:40px;height:24px;border-radius:20px;background:var(--hairline);position:relative;flex-shrink:0;transition:background .2s;cursor:pointer;}
+  .toggle.on{background:var(--gold-deep);}
+  .toggle::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,0.2);}
+  .toggle.on::after{left:19px;}
+  .slider-row{display:flex;align-items:center;gap:10px;padding:14px 4px;border-bottom:1px solid var(--hairline);}
+  .slider-row .tag{font-family:var(--mono);font-size:9px;color:var(--ink-dim);min-width:24px;}
+  .slider{flex:1;height:4px;background:var(--hairline);border-radius:2px;position:relative;}
+  .slider .fill{position:absolute;left:0;top:0;bottom:0;width:60%;background:var(--gold);border-radius:2px;}
+  .slider .knob{position:absolute;top:50%;transform:translateY(-50%);left:60%;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid var(--gold);margin-left:-7px;box-shadow:0 1px 3px rgba(0,0,0,0.15);}
+  .clip-stage{position:relative;margin-bottom:12px;}
+  .clip-carousel{
+    display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:10px;
+    scrollbar-width:none;border-radius:14px;
+  }
+  .clip-carousel::-webkit-scrollbar{display:none;}
+  .clip-slide{
+    flex:0 0 100%;height:270px;border-radius:14px;
+    background-size:cover;background-position:center;border:1px solid var(--hairline);
+    display:flex;align-items:center;justify-content:center;scroll-snap-align:center;
+  }
+  .big-play{width:46px;height:46px;border-radius:50%;background:rgba(0,0,0,0.6);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;color:#fff;}
+  /* TikTok-style side arrows */
+  .car-nav{
+    position:absolute;top:50%;transform:translateY(-50%);
+    width:34px;height:34px;border-radius:50%;border:none;cursor:pointer;z-index:5;
+    background:rgba(0,0,0,0.55);color:#fff;backdrop-filter:blur(3px);
+    display:flex;align-items:center;justify-content:center;transition:all .15s;
+  }
+  .car-nav:active{transform:translateY(-50%) scale(0.9);background:rgba(0,0,0,0.75);}
+  .car-nav.prev{left:8px;}
+  .car-nav.next{right:8px;}
+  .sheet-dots{display:flex;gap:5px;margin:0 0 12px;}
+  .sheet-dot{width:24px;height:24px;border-radius:8px;background:var(--bg);border:1.5px solid var(--hairline);font-size:10px;font-weight:700;color:var(--ink-dim);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;}
+  .sheet-dot.active{border-color:var(--gold);background:rgba(201,160,86,0.12);color:var(--gold-deep);}
+  .sheet-btn{
+    width:100%;padding:11px;border-radius:12px;border:1px solid var(--hairline);background:var(--bg);
+    font-size:12px;font-weight:700;font-family:var(--font);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:7px;margin-bottom:7px;transition:all .15s;
+  }
+  .sheet-btn:active{transform:scale(0.99);}
+  .sheet-btn.dark{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .sheet-btn.gold{background:linear-gradient(135deg,var(--gold),var(--gold-deep));color:#fff;border:none;}
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <button class="demo-btn" id="openSheet">Open plans sheet</button>
+  <div class="stage-note">Mobile / PWA view — <b>bottom tab bar</b> · <b>compact header</b> · <b>bottom-sheet plans</b></div>
+
+  <!-- Phone frame -->
+  <div class="frame">
+
+    <!-- Top bar: brand + upgrade + account -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-avatar"><span></span></div>
+        <div class="brand-name">TrimAURA</div>
+      </div>
+      <div class="top-right">
+        <button class="upgrade-btn" id="upgradeBtn">Upgrade</button>
+        <button class="account-avatar" id="accountBtn" style="border:none;cursor:pointer;font-family:var(--font);padding:0;">BJ</button>
+      </div>
+    </header>
+
+    <!-- Usage meter -->
+    <div class="usage-card">
+      <span>3 OF 5 CLIPS USED</span>
+      <span class="meter"><i style="width:40%"></i></span>
+    </div>
+
+    <!-- Scrollable content -->
+    <div class="phone-scroll">
+      <div class="section-label">New short</div>
+
+      <div class="url-field">
+        <svg class="icon" width="14" height="14" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        <input type="url" placeholder="YouTube, TikTok, Drive / Frame.io link">
+      </div>
+
+      <div class="divider-or">OR</div>
+
+      <div class="upload-card">
+        <div class="upload-icon">
+          <svg class="icon" width="15" height="15" viewBox="0 0 24 24"><path d="M12 16V6 M8 10l4-4 4 4"/><path d="M5 18h14"/></svg>
+        </div>
+        <div class="upload-filename">Drop your video here</div>
+        <div class="upload-hint">MP4 · MOV · MKV — best under ~40 MB</div>
+        <div class="upload-btn">Browse files</div>
+      </div>
+
+      <!-- Generate CTA sits right under the input -->
+      <button class="cta">Generate shorts</button>
+      <div class="progress-track"><div class="progress-fill"></div></div>
+      <div class="progress-row"><span>RENDERING</span><span>45%</span></div>
+
+      <!-- Collapsible templates -->
+      <div class="collapse-toggle" id="tplToggle">
+        <span class="section-label" style="margin:0;">Template <span class="hint">Blur Pad</span></span>
+        <span class="collapse-meta"><span class="tpl-count">6</span>
+          <svg class="icon chevron" width="13" height="13" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </div>
+      <div class="tpl-wrap" id="tplWrap">
+        <div class="tpl-grid">
+          <div class="tpl-card active">
+            <div class="tpl-thumb" style="background-image:url('/template-previews/blurpad_v1.jpg')"></div>
+            <div class="tpl-name">Blur Pad <svg class="icon tpl-check" width="11" height="11" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg></div>
+          </div>
+          <div class="tpl-card">
+            <div class="tpl-thumb" style="background-image:url('/template-previews/brand_bold_v1.jpg')"></div>
+            <div class="tpl-name">Brand Bold <svg class="icon tpl-check" width="11" height="11" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg></div>
+          </div>
+          <div class="tpl-card">
+            <div class="tpl-thumb" style="background-image:url('/template-previews/gaming_neon_v1.jpg')"></div>
+            <div class="tpl-name">Gaming Neon <svg class="icon tpl-check" width="11" height="11" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg></div>
+          </div>
+          <div class="tpl-card">
+            <div class="tpl-thumb" style="background-image:url('/template-previews/mrbeast_energy_v1.jpg')"></div>
+            <div class="tpl-name">MrBeast <svg class="icon tpl-check" width="11" height="11" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results -->
+      <div class="results-head">
+        <h2>Results</h2>
+        <div class="meta">5 CLIPS</div>
+      </div>
+
+      <div class="clip-row">
+        <div class="clip-thumb" style="background-image:url('/template-previews/blurpad_v1.jpg')">
+          <span class="clip-score">92</span>
+        </div>
+        <div class="clip-body">
+          <div class="clip-title">Why 100 Kids Got Their Biggest Wish…</div>
+          <div class="clip-meta">0:24 · STRONG HOOK</div>
+        </div>
+        <button class="clip-dl"><svg class="icon" width="12" height="12" viewBox="0 0 24 24" style="stroke:#fff"><path d="M12 16V4m0 12-4-4m4 4 4-4"/><path d="M16 20H8"/></svg></button>
+      </div>
+      <div class="clip-row">
+        <div class="clip-thumb" style="background-image:url('/template-previews/brand_bold_v1.jpg')">
+          <span class="clip-score">88</span>
+        </div>
+        <div class="clip-body">
+          <div class="clip-title">The Moment LeBron Walked In</div>
+          <div class="clip-meta">0:31 · HIGH RETENTION</div>
+        </div>
+        <button class="clip-dl"><svg class="icon" width="12" height="12" viewBox="0 0 24 24" style="stroke:#fff"><path d="M12 16V4m0 12-4-4m4 4 4-4"/><path d="M16 20H8"/></svg></button>
+      </div>
+
+      <!-- Vault -->
+      <div class="vault-head">
+        <h2>Clip vault</h2>
+        <div class="meta">0 PENDING</div>
+      </div>
+
+      <div class="vault-item">
+        <div class="vault-thumb" style="background-image:url('/template-previews/blurpad_v1.jpg')"></div>
+        <div class="vault-body">
+          <div class="vault-name">Modal-test-2</div>
+          <div class="vault-meta">5 CLIPS · 6H AGO</div>
+        </div>
+        <span class="vault-status">READY</span>
+      </div>
+      <div class="vault-item">
+        <div class="vault-thumb" style="background-image:url('/template-previews/gaming_neon_v1.jpg')"></div>
+        <div class="vault-body">
+          <div class="vault-name">Campaign Q3 — gaming intro</div>
+          <div class="vault-meta">0 CLIPS · 2D AGO</div>
+        </div>
+        <span class="vault-status pending">PENDING</span>
+      </div>
+    </div>
+
+    <!-- Bottom tab bar -->
+    <nav class="tab-bar">
+      <div class="tab active">
+        <svg class="icon" width="20" height="20" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>
+        Studio
+      </div>
+      <div class="tab">
+        <svg class="icon" width="20" height="20" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18 M9 21V9"/></svg>
+        Library
+      </div>
+      <div class="tab" id="settingsTab">
+        <svg class="icon" width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2 M12 18.8V21 M4.9 4.9l1.6 1.6 M17.5 17.5l1.6 1.6 M3 12h2.2 M18.8 12H21 M4.9 19.1l1.6-1.6 M17.5 6.5l1.6-1.6"/></svg>
+        Settings
+      </div>
+    </nav>
+
+    <!-- Bottom sheets (inset 10px, all corners rounded — no hard edges) -->
+    <div class="sheet-backdrop" id="sheetBackdrop"></div>
+
+    <!-- 1 · Clip preview sheet (opens on clip row) -->
+    <div class="sheet" id="clipSheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-top">
+        <h3>Clip preview</h3>
+        <button class="sheet-close" data-close>
+          <svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <!-- Swipeable clip carousel -->
+      <div class="clip-stage">
+      <div class="clip-carousel" id="clipCarousel">
+        <div class="clip-slide" style="background-image:url('/template-previews/blurpad_v1.jpg')" data-title="Why 100 Kids Got Their Biggest Wish…" data-meta="SCORE 92/100 · 0:24 · #viral">
+          <div class="big-play"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" style="stroke:#fff"><path d="M8 5l11 7-11 7Z"/></svg></div>
+        </div>
+        <div class="clip-slide" style="background-image:url('/template-previews/brand_bold_v1.jpg')" data-title="The Moment LeBron Walked In" data-meta="SCORE 88/100 · 0:31 · #basketball">
+          <div class="big-play"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" style="stroke:#fff"><path d="M8 5l11 7-11 7Z"/></svg></div>
+        </div>
+        <div class="clip-slide" style="background-image:url('/template-previews/gaming_neon_v1.jpg')" data-title="Kid's Reaction Says It All" data-meta="SCORE 81/100 · 0:19 · #reaction">
+          <div class="big-play"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" style="stroke:#fff"><path d="M8 5l11 7-11 7Z"/></svg></div>
+        </div>
+        <div class="clip-slide" style="background-image:url('/template-previews/mrbeast_energy_v1.jpg')" data-title="Closing Line — Call to Action" data-meta="SCORE 76/100 · 0:27 · #cta">
+          <div class="big-play"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" style="stroke:#fff"><path d="M8 5l11 7-11 7Z"/></svg></div>
+        </div>
+        <div class="clip-slide" style="background-image:url('/template-previews/podcast_split_v1.jpg')" data-title="Behind‑the‑Scenes Prep Moment" data-meta="SCORE 70/100 · 0:22 · #podcast">
+          <div class="big-play"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" style="stroke:#fff"><path d="M8 5l11 7-11 7Z"/></svg></div>
+        </div>
+      </div>
+      <button class="car-nav prev" id="prevClip" title="Previous clip">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24" style="stroke:#fff"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <button class="car-nav next" id="nextClip" title="Next clip">
+        <svg class="icon" width="15" height="15" viewBox="0 0 24 24" style="stroke:#fff"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+      </div>
+      <div class="sheet-dots" id="clipDots">
+        <div class="sheet-dot active">1</div>
+        <div class="sheet-dot">2</div>
+        <div class="sheet-dot">3</div>
+        <div class="sheet-dot">4</div>
+        <div class="sheet-dot">5</div>
+      </div>
+      <div id="clipTitle" style="font-size:13px;font-weight:800;line-height:1.4;">Why 100 Kids Got Their Biggest Wish…</div>
+      <div id="clipMeta" style="font-family:var(--mono);font-size:9px;color:var(--ink-dim);margin:4px 0 12px;">SCORE 92/100 · 0:24 · #viral</div>
+      <button class="sheet-btn dark">Copy Post Text</button>
+      <button class="sheet-btn">Download MP4</button>
+      <button class="sheet-btn">Refresh SEO</button>
+      <button class="sheet-btn gold" id="clipUpgradeBtn">Unlock Premium effects</button>
+    </div>
+
+    <!-- 2 · Settings sheet (opens from Settings tab) -->
+    <div class="sheet" id="settingsSheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-top">
+        <h3>Settings</h3>
+        <button class="sheet-close" data-close>
+          <svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="setting-row">
+        <div><div class="lbl">Show captions</div><div class="sub">Burned-in text overlays</div></div>
+        <div class="toggle on"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="lbl">Punctuation cleanup</div><div class="sub">Auto-fix typos & spacing</div></div>
+        <div class="toggle on"></div>
+      </div>
+      <div class="slider-row">
+        <span class="tag">FONT</span>
+        <div class="slider"><div class="fill" style="width:60%"></div><div class="knob" style="left:60%"></div></div>
+        <span class="tag">60%</span>
+      </div>
+      <div class="slider-row">
+        <span class="tag">INSET</span>
+        <div class="slider"><div class="fill" style="width:35%"></div><div class="knob" style="left:35%"></div></div>
+        <span class="tag">35%</span>
+      </div>
+      <div class="setting-row">
+        <div><div class="lbl">Word filters</div><div class="sub">2 active</div></div>
+        <svg class="icon chev" width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="setting-row">
+        <div><div class="lbl">File picker</div><div class="sub">Google Drive</div></div>
+        <svg class="icon chev" width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+    </div>
+
+    <!-- 3 · Account menu sheet (opens from avatar — billing lives here) -->
+    <div class="sheet" id="accountSheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-avatar-area">
+        <div class="account-avatar" style="width:44px;height:44px;font-size:13px;">BJ</div>
+        <div>
+          <div style="font-size:13.5px;font-weight:800;">Bassy J</div>
+          <div style="font-size:9.5px;color:var(--ink-dim);">Free plan · 3 clips left</div>
+        </div>
+      </div>
+      <div class="menu-row">
+        <span class="left"><svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M20 21a8 8 0 10-16 0"/><circle cx="12" cy="7" r="4"/></svg>My account</span>
+        <svg class="icon chev" width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="menu-row gold" id="menuBilling">
+        <span class="left"><svg class="icon" width="16" height="16" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18 M7 15h4"/></svg>Billing &amp; plans</span>
+        <svg class="icon chev" width="14" height="14" viewBox="0 0 24 24" style="color:var(--gold-deep);"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="menu-row">
+        <span class="left"><svg class="icon" width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2 M12 18.8V21 M4.9 4.9l1.6 1.6 M17.5 17.5l1.6 1.6 M3 12h2.2 M18.8 12H21 M4.9 19.1l1.6-1.6 M17.5 6.5l1.6-1.6"/></svg>Settings</span>
+        <svg class="icon chev" width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="menu-row danger">
+        <span class="left"><svg class="icon" width="16" height="16" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5 M21 12H9"/></svg>Sign out</span>
+      </div>
+    </div>
+
+    <!-- 4 · Plans sheet (opened from Upgrade / billing entry) -->
+    <div class="sheet" id="plansSheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-top">
+        <h3>Pick your plan</h3>
+        <button class="sheet-close" data-close>
+          <svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="plan-row">
+        <div>
+          <div class="plan-name">Free</div>
+          <div class="plan-price">$0<small> / forever</small></div>
+          <div class="plan-desc">3 clips / week · watermark · 720p</div>
+        </div>
+        <button class="plan-cta">Current</button>
+      </div>
+
+      <div class="plan-row hot">
+        <div>
+          <div class="pop">★ MOST POPULAR</div>
+          <div class="plan-name">Pro</div>
+          <div class="plan-price">$14<small> / month</small></div>
+          <div class="plan-desc">Unlimited clips · no watermark · 1080p · priority</div>
+          <div class="plan-feat"><svg class="icon" width="11" height="11" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Everything unlocked</div>
+        </div>
+        <button class="plan-cta">Upgrade</button>
+      </div>
+
+      <div class="plan-row">
+        <div>
+          <div class="plan-name">Studio</div>
+          <div class="plan-price">$39<small> / month</small></div>
+          <div class="plan-desc">5 team seats · 4K · brand kits</div>
+        </div>
+        <button class="plan-cta">Choose</button>
+      </div>
+
+      <div class="sheet-foot">SECURE CHECKOUT VIA STRIPE · CANCEL ANYTIME</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const backdrop = document.getElementById('sheetBackdrop');
+  const SHEETS = ['clipSheet', 'settingsSheet', 'accountSheet', 'plansSheet'];
+  function closeSheets(){ SHEETS.forEach(id => document.getElementById(id).classList.remove('open')); backdrop.classList.remove('open'); }
+  function openSheet(id){ closeSheets(); document.getElementById(id).classList.add('open'); backdrop.classList.add('open'); }
+
+  // triggers
+  document.getElementById('openSheet').addEventListener('click', () => openSheet('plansSheet'));
+  document.getElementById('upgradeBtn').addEventListener('click', () => openSheet('plansSheet'));
+  document.getElementById('clipUpgradeBtn').addEventListener('click', () => openSheet('plansSheet'));
+  document.getElementById('accountBtn').addEventListener('click', () => openSheet('accountSheet'));
+  document.getElementById('menuBilling').addEventListener('click', () => openSheet('plansSheet'));
+  document.getElementById('settingsTab').addEventListener('click', () => openSheet('settingsSheet'));
+  document.querySelectorAll('.clip-row').forEach(row => row.addEventListener('click', () => openSheet('clipSheet')));
+
+  // swipeable clip carousel
+  const carousel = document.getElementById('clipCarousel');
+  const clipDots = document.querySelectorAll('#clipDots .sheet-dot');
+  const clipTitle = document.getElementById('clipTitle');
+  const clipMeta = document.getElementById('clipMeta');
+  const slides = carousel.querySelectorAll('.clip-slide');
+  function setClip(i){
+    const s = slides[i];
+    clipTitle.textContent = s.dataset.title;
+    clipMeta.textContent = s.dataset.meta;
+    clipDots.forEach((d, di) => d.classList.toggle('active', di === i));
+  }
+  carousel.addEventListener('scroll', () => {
+    const i = Math.round(carousel.scrollLeft / carousel.clientWidth);
+    setClip(Math.min(Math.max(i, 0), slides.length - 1));
+  });
+  clipDots.forEach((d, di) => d.addEventListener('click', () => {
+    carousel.scrollTo({ left: di * carousel.clientWidth, behavior: 'smooth' });
+  }));
+
+  // TikTok-style side arrows
+  document.getElementById('prevClip').addEventListener('click', () => {
+    const i = Math.round(carousel.scrollLeft / carousel.clientWidth) - 1;
+    carousel.scrollTo({ left: Math.max(i, 0) * carousel.clientWidth, behavior: 'smooth' });
+  });
+  document.getElementById('nextClip').addEventListener('click', () => {
+    const i = Math.round(carousel.scrollLeft / carousel.clientWidth) + 1;
+    carousel.scrollTo({ left: Math.min(i, slides.length - 1) * carousel.clientWidth, behavior: 'smooth' });
+  });
+
+  // close
+  document.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', closeSheets));
+  backdrop.addEventListener('click', closeSheets);
+
+  const tplToggle = document.getElementById('tplToggle');
+  const tplWrap = document.getElementById('tplWrap');
+  tplToggle.addEventListener('click', () => {
+    tplWrap.classList.toggle('open');
+    tplToggle.classList.toggle('open');
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,28 @@
+{
+  "id": "podcast_split_v1",
+  "name": "Podcast Split v1",
+  "description": "Video centered with PNG overlay frame, clean white subtitles with subtle bottom bar. Built for podcast clips and talking heads.",
+  "genres": ["podcast", "interview", "discussion", "conversation", "talk show", "debate", "q&a", "qa", "roundtable", "fireside", "chat", "guest", "host", "panel"],
+  "canvas": { "width": 1080, "height": 1920, "fps": 30 },
+  "video_slot": {
+    "width": 1080, "height": 1920,
+    "x_offset": 0, "y_offset": 0,
+    "fit_mode": "cover"
+  },
+  "overlay_image": "overlay.png",
+  "color_grade": {
+    "brightness": 0.0, "contrast": 1.0,
+    "saturation": 1.0, "gamma": 1.0
+  },
+  "ken_burns": {
+    "enabled": false, "zoom_start": 1.0, "zoom_end": 1.0
+  },
+  "subtitles": {
+    "alignment": 2, "margin_v": 200,
+    "font_name": "Arial", "font_size": 28,
+    "primary_color": "&H00FFFFFF",
+    "highlight_color": "&H00FFE600",
+    "outline_color": "&H00000000",
+    "outline_width": 3
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "mrbeast_energy_v1",
+  "name": "MrBeast Energy v1",
+  "description": "THE #1 viral caption style — bold yellow/red on black, thick outline, uppercase. +35-45% retention lift. Works across all niches.",
+  "genres": ["challenge", "viral", "prank", "reaction", "comedy", "energy", "extreme", "crazy", "experiment", "try not to", "24 hours", "100 days", "insane", "giveaway", "survival", "record"],
+  "canvas": { "width": 1080, "height": 1920, "fps": 30 },
+  "video_slot": {
+    "width": 1080, "height": 1920,
+    "x_offset": 0, "y_offset": 0,
+    "fit_mode": "cover"
+  },
+  "overlay_image": "overlay.png",
+  "color_grade": {
+    "brightness": -0.02, "contrast": 1.2,
+    "saturation": 1.3, "gamma": 0.95
+  },
+  "ken_burns": {
+    "enabled": true, "zoom_start": 1.0, "zoom_end": 1.06
+  },
+  "subtitles": {
+    "alignment": 2, "margin_v": 180,
+    "font_name": "Arial Black", "font_size": 36,
+    "primary_color": "&H00FFE600",
+    "highlight_color": "&H00FF3333",
+    "outline_color": "&H00000000",
+    "outline_width": 6
+  }
+}
