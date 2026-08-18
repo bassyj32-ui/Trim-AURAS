@@ -6,7 +6,6 @@ failure-isolation matrix (codec/container, resolution, duration, audio type,
 file size). Rows are also written to tmp/diag_matrix.json for the runner.
 """
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path

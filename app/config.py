@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     app_env: str = "development"
     port: int = 8000
 
+    # CORS — explicit origins only (auth uses Bearer tokens, not cookies, so
+    # allow_credentials stays False and wildcard origins are never allowed).
+    cors_origins: str = (
+        "https://bassyj32--trimaura-fastapi-app.modal.run,"
+        "http://localhost:8100,http://127.0.0.1:8100"
+    )
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

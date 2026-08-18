@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, r"d:\trae\TrimAURAs\TrimAuras")
 
-from app.pipeline.video_editor import execute_render  # noqa: E402
+from app.pipeline.video_editor import execute_render
 
 ROOT = Path(r"d:\trae\TrimAURAs\TrimAuras")
 VIDEO = ROOT / "tmp" / "diag" / "videos" / "v01_small_h264_720p_40s.mp4"

@@ -1,5 +1,7 @@
 """Get Modal logs and check for errors."""
-import subprocess, sys, json, os
+import os
+import subprocess
+import sys
 
 # Save logs to file
 with open("modal_logs.txt", "w", encoding="utf-8") as f:

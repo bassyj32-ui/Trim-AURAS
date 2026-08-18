@@ -3,10 +3,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.database import init_db
 from app.api.routes import router as api_router
-
 from app.config import settings
+from app.database import init_db
+from app.recovery import start_recovery
 
 sentry_sdk.init(
     dsn=settings.sentry_dsn,
@@ -16,10 +16,15 @@ sentry_sdk.init(
 
 app = FastAPI(title="TrimAURA", version="0.1.0")
 
+# Explicit allow-list, never "*". Auth uses Bearer tokens, so credentials
+# (cookies) are not needed — keeping allow_credentials=False avoids the
+# browser's wildcard+credentials restriction and CSRF surface.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[
+        o.strip() for o in settings.cors_origins.split(",") if o.strip()
+    ],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -30,12 +35,20 @@ app.include_router(api_router)
 @app.on_event("startup")
 def on_startup():
     init_db()
+    # Background sweep that fails jobs stuck in non-terminal states, so the
+    # frontend stops polling jobs whose worker died (OOM, lost container).
+    try:
+        start_recovery()
+    except RuntimeError:
+        # No running event loop (e.g. import-time contexts) — skip gracefully.
+        pass
 
 
 @app.get("/health")
 def health():
     import os
-    from app.config import settings, MODAL
+
+    from app.config import MODAL, settings
     from app.database import engine
     url = str(engine.url)
     # Redact password
@@ -62,7 +75,7 @@ def health():
 
 @app.get("/sentry-debug")
 async def trigger_error():
-    division_by_zero = 1 / 0
+    1 / 0
 
 
 app.mount("/", StaticFiles(directory="public", html=True), name="public")

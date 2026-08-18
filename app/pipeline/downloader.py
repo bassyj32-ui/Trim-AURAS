@@ -354,8 +354,7 @@ def _download_frameio(url: str, preferred_height: int = 720) -> str:
         with client.stream("GET", dl_url) as stream:
             stream.raise_for_status()
             with open(dest, "wb") as fh:
-                for chunk in stream.iter_bytes(chunk_size=1024 * 1024):
-                    fh.write(chunk)
+                fh.writelines(stream.iter_bytes(chunk_size=1024 * 1024))
 
     if not dest.exists() or dest.stat().st_size == 0:
         raise RuntimeError(f"Frame.io download produced an empty file: {dest.name}")
@@ -369,8 +368,7 @@ def _download_direct(url: str) -> str:
         with client.stream("GET", url) as stream:
             stream.raise_for_status()
             with open(dest, "wb") as fh:
-                for chunk in stream.iter_bytes(chunk_size=1024 * 1024):
-                    fh.write(chunk)
+                fh.writelines(stream.iter_bytes(chunk_size=1024 * 1024))
     if not dest.exists() or dest.stat().st_size == 0:
         raise RuntimeError(f"Direct download produced an empty file: {dest.name}")
     return os.path.abspath(dest)

@@ -1,0 +1,13 @@
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+# Focused rule set: catch real bugs (undefined names, unused imports/vars,
+# f-string issues) without drowning in style debt from the existing codebase.
+# Expand the selection as debt is paid down.
+select = ["F"]
+
+[tool.ruff.lint.per-file-ignores]
+# Diagnostic scripts are one-shot tools, not production code.
+"scripts/**/*" = ["F"]

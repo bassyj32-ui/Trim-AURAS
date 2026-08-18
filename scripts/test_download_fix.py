@@ -1,5 +1,8 @@
 """Test download fix: submit GDrive job, wait for completion, verify download."""
-import urllib.request, json, time, sys
+import json
+import sys
+import time
+import urllib.request
 
 URL = "https://bassyj32--trimaura-fastapi-app.modal.run"
 GDRIVE_URL = "https://drive.google.com/file/d/1C0ewiFev8kfwFcXjd9kdux5bF5nFsHu_/view"

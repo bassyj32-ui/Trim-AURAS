@@ -1,4 +1,5 @@
 import json
+
 import httpx
 
 BASE = "https://bassyj32--trimaura-fastapi-app.modal.run"

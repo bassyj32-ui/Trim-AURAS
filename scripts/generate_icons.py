@@ -1,6 +1,7 @@
 """Generate PWA icon PNGs for TrimAURA."""
-from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
+
+from PIL import Image, ImageDraw
 
 PUBLIC = Path("public")
 ICON_BG = (0, 229, 255)  # accent cyan

@@ -51,8 +51,8 @@ def detect_face_track(
 def _detect_mediapipe(video_path: str, sample_interval: float) -> list[dict] | None:
     """MediaPipe face detection — returns None when mediapipe is unavailable."""
     try:
-        import mediapipe as mp
         import cv2
+        import mediapipe as mp
     except Exception:
         return None
 

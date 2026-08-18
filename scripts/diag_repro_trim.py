@@ -8,12 +8,11 @@ Synthetic segments with word gaps >= 0.5s so _compute_silence_cuts returns
 cuts and the [condv] concat chain actually builds.
 """
 import asyncio
-import json
 import sys
 
 sys.path.insert(0, r"d:\trae\TrimAURAs\TrimAuras")
 
-from app.pipeline.video_editor import execute_render  # noqa: E402
+from app.pipeline.video_editor import execute_render
 
 VIDEO = r"d:\trae\TrimAURAs\TrimAuras\tmp\diag\videos\v01_small_h264_720p_40s.mp4"
 

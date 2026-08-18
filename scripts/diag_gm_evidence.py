@@ -1,7 +1,6 @@
 """Collect evidence for job 108's generate-more clip (direct audit + trim + caption position)."""
 import json
 import subprocess
-import time
 from pathlib import Path
 
 import httpx

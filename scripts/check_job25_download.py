@@ -1,4 +1,5 @@
-import urllib.request, json
+import json
+import urllib.request
 
 # Get job 25 clips
 r = urllib.request.urlopen("https://bassyj32--trimaura-fastapi-app.modal.run/api/jobs/25", timeout=15)

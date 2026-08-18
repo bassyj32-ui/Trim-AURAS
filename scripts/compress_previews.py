@@ -1,5 +1,6 @@
 """Compress template preview images to be lightweight for 52px circular swatches."""
 import os
+
 from PIL import Image
 
 INPUT_DIR = os.path.join("public", "template-previews")

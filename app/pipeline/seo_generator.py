@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from typing import Any
 
 from httpx import AsyncClient
 from tenacity import retry, stop_after_attempt, wait_exponential

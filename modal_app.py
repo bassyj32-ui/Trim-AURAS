@@ -129,7 +129,8 @@ def _write_status(job_id: int, status: str, progress: int, error: str | None = N
 
 def _ensure_path():
     """Make sure /root is on sys.path so `from app.xxx` imports resolve."""
-    import os, sys
+    import os
+    import sys
 
     cwd = os.getcwd()  # typically /root in Modal containers
     for p in (cwd, os.path.join(cwd, "app")):
@@ -159,10 +160,12 @@ def fastapi_app():
 
     # Auto-cleanup old failed/pending jobs on startup
     try:
+        from datetime import datetime, timedelta
+
+        from sqlmodel import Session, select
+
         from app.database import engine, init_db
         from app.models import Job, JobStatus
-        from sqlmodel import Session, select
-        from datetime import datetime, timedelta
 
         init_db()
         cutoff = datetime.utcnow() - timedelta(hours=24)
@@ -236,6 +239,7 @@ def process_pipeline(job_id: int, job_data: dict | None = None):
         # that was passed alongside job_id.
         if job_data is not None:
             from sqlmodel import Session
+
             from app.models import Job
 
             with Session(engine) as session:
@@ -247,7 +251,6 @@ def process_pipeline(job_id: int, job_data: dict | None = None):
                     session.commit()
 
         import asyncio
-        from app.pipeline.orchestrator import execute_pipeline
 
         # Wait for the uploaded source file to appear on the Volume (it was
         # written by the ASGI container and may not have synced yet). Reload
@@ -255,7 +258,10 @@ def process_pipeline(job_id: int, job_data: dict | None = None):
         # propagate between containers; only a reload() sees another
         # container's commit, and a fresh from_name() handle is required to
         # pick up the latest volume state.
-        import os, time
+        import os
+        import time
+
+        from app.pipeline.orchestrator import execute_pipeline
         if job_data and "source_url" in job_data and job_data["source_url"].startswith("/mnt/data/"):
             waited = 0
             found = False
@@ -306,6 +312,7 @@ def process_generate_more(job_id: int, count: int = 3):
         _ensure_path()
 
         import asyncio
+
         from app.pipeline.orchestrator import generate_more_clips
 
         asyncio.run(generate_more_clips(job_id, count=count))
@@ -333,6 +340,7 @@ def process_trim_clip(clip_id: int, new_start: float, new_end: float):
 
         # Resolve job_id from the clip so status files stay consistent.
         from sqlmodel import Session
+
         from app.models import VideoClip
 
         with Session(engine) as session:
@@ -343,6 +351,7 @@ def process_trim_clip(clip_id: int, new_start: float, new_end: float):
             _write_status(job_id, "RENDERING", 60)
 
         import asyncio
+
         from app.pipeline.orchestrator import trim_clip
 
         asyncio.run(trim_clip(clip_id, new_start, new_end))
@@ -359,7 +368,9 @@ def _sync_clips_to_volume(job_id: int):
     """Copy locally-rendered clips to the Volume so they can be served
     by the `/api/clips/{id}/download` endpoint."""
     import shutil
+
     from sqlmodel import Session
+
     from app.database import engine
     from app.models import VideoClip
 
@@ -414,7 +425,8 @@ def ffmpeg_probe() -> str:
 def yt_probe(url: str, cookies_text: str = "", impersonate: bool = False) -> str:
     """Probe the deployed image: does deno exist? does yt-dlp extract formats
     with the given cookies? Run via:  modal run modal_app.py::yt_probe ..."""
-    import os, subprocess, tempfile
+    import os
+    import subprocess
     from pathlib import Path
 
     lines = []
@@ -453,7 +465,7 @@ def yt_probe(url: str, cookies_text: str = "", impersonate: bool = False) -> str
         capture_output=True, text=True)
     lines.append("curl_cffi check: " + (cc.stdout.strip() or cc.stderr.strip()[:200]))
     # 4. start POT server (bgutil-pot) — required by the yt-dlp plugin
-    pot_start = subprocess.Popen(
+    _pot_proc = subprocess.Popen(
         ["bgutil-pot", "server", "--host", "127.0.0.1", "--port", "4416"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )

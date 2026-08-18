@@ -7,8 +7,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-from app.config import settings
-
 TEMPLATES_DIR = Path("assets") / "templates"
 RENDER_DIR = Path("tmp") / "render"
 
@@ -541,8 +539,7 @@ def _build_animated_crop(
         t = s.get("t", 0.0)
         if trim_start - 0.5 <= t <= trim_end + 0.5:
             rel = _shift_time(t - trim_start, cuts_rel)
-            if rel < 0.0:
-                rel = 0.0
+            rel = max(rel, 0.0)
             samples.append((rel, float(s.get("cx", 0.5)), float(s.get("cy", 0.5))))
     if len(samples) < 2:
         return None
@@ -760,7 +757,6 @@ async def execute_render(
 
         # 3. Optional PNG overlay (composited on top) — template frame/branding
         if apply_overlay and overlay_path:
-            ov_escaped = _ffmpeg_escape_path(overlay_path)
             chains.append(
                 f"[1:v]format=rgba[overlay];[{post_label}][overlay]overlay=0:0[withovl]"
             )

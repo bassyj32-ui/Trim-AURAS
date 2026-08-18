@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, r"d:\trae\TrimAURAs\TrimAuras")
 
-from app.models import Job  # noqa: E402
+from app.models import Job
 
 
 def t(label: str, **kw):

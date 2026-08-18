@@ -1,10 +1,9 @@
 """Backend smoke test — verifies API, templates, static files, and DB work."""
-import sys
-import os
-import time
 import json
-import urllib.request
+import os
+import sys
 import urllib.error
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

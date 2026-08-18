@@ -1,7 +1,6 @@
 """Capture local ffmpeg version + full filter_complex for the diff report."""
 import asyncio
 import json
-import re
 import sys
 import time
 from pathlib import Path
@@ -13,7 +12,7 @@ from app.pipeline.video_editor import execute_render
 
 VID = r"tmp\downloads\VAL_Agent_30_Launch.mov"
 FACE = [{"t": i, "cx": 0.45 + 0.05 * ((i // 10) % 2), "cy": 0.40 + 0.02 * (i % 5)}
-        for i in range(0, 96)]
+        for i in range(96)]
 lines: list[str] = []
 
 

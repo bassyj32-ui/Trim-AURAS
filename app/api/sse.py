@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from sqlmodel import Session
 
@@ -8,7 +8,7 @@ from app.database import engine
 from app.models import Job
 
 
-async def event_stream(job_id: int) -> AsyncGenerator[str, None]:
+async def event_stream(job_id: int) -> AsyncGenerator[str]:
     """Yield SSE events for a job, polling DB for status changes every 2s."""
     last_status = None
     last_progress = -1

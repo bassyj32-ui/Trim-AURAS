@@ -48,7 +48,7 @@ def volume_get(remote: str, local: Path) -> str:
 def capture_stderr(jid: int, label: str) -> dict:
     """Pull diag/clip_0..2.stderr.log into tmp/parity_stderr immediately."""
     out = {}
-    for idx in range(0, 3):
+    for idx in range(3):
         local = STDERR_DIR / f"{label}_clip{idx}.stderr.log"
         txt = volume_get(f"diag/clip_{idx}.stderr.log", local)
         if txt.strip():

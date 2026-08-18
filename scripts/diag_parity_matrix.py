@@ -99,7 +99,7 @@ def main() -> None:
             job = {"err": str(e)}
         # Capture stderr logs BEFORE the next row's render overwrites them.
         stderr = {}
-        for idx in range(0, 5):
+        for idx in range(5):
             try:
                 txt = modal_volume_cat(f"diag/clip_{idx}.stderr.log")
                 if txt.strip():

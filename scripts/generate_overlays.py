@@ -1,6 +1,7 @@
 """Generate overlay PNG frames for video templates — research-backed designs."""
-from PIL import Image, ImageDraw
 from pathlib import Path
+
+from PIL import Image, ImageDraw
 
 W, H = 1080, 1920
 OUT = Path("assets/templates")

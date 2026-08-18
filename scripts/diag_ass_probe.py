@@ -5,14 +5,13 @@ template) and burns it onto a solid black 1080x1920 canvas at t=2.0, then
 reports the bounding box of non-black pixels — proving the on-screen
 position of the caption (expected: bottom center, margin_v=180).
 """
-import json
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, r"d:\trae\TrimAURAs\TrimAuras")
 
-from app.pipeline.video_editor import RENDER_DIR, _build_subtitle_file  # noqa: E402
+from app.pipeline.video_editor import RENDER_DIR, _build_subtitle_file
 
 SEGMENTS = [
     {"text": "this is a test phrase with several words spoken aloud",

@@ -12,12 +12,15 @@ import time
 
 sys.path.insert(0, ".")
 
-from app.pipeline.transcriber import execute_transcribe
-from app.pipeline.intelligence import (
-    extract_video_signals, classify_content, execute_analyze,
-    snap_clips_to_signals, recommend_template,
-)
 from app.pipeline.face_track import detect_face_track
+from app.pipeline.intelligence import (
+    classify_content,
+    execute_analyze,
+    extract_video_signals,
+    recommend_template,
+    snap_clips_to_signals,
+)
+from app.pipeline.transcriber import execute_transcribe
 from app.pipeline.video_editor import execute_render
 
 VID = r"tmp\downloads\VAL_Agent_30_Launch.mov"

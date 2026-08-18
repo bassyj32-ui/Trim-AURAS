@@ -18,7 +18,6 @@ Writes tmp/parity_verify.json
 """
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 import httpx
@@ -90,7 +89,7 @@ def psnr_diff(path_a: Path, path_b: Path, t: float = 2.0) -> dict:
         )
     r = subprocess.run(
         ["ffmpeg", "-y", "-v", "info", "-i", str(tmp_a), "-i", str(tmp_b),
-         "-filter_complex", f"psnr=stats_file=-", "-f", "null", "-"],
+         "-filter_complex", "psnr=stats_file=-", "-f", "null", "-"],
         capture_output=True, text=True, timeout=120,
     )
     last = [l for l in r.stderr.splitlines() if "PSNR" in l]

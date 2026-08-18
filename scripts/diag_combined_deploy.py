@@ -35,11 +35,10 @@ RESULTS: dict = {}
 
 
 def upload(data: dict) -> tuple[int, dict]:
-    with httpx.Client(timeout=1800) as c:
-        with VID.open("rb") as fh:
-            r = c.post(f"{BASE}/api/jobs/upload",
-                       files={"file": (VID.name, fh, "video/mp4")},
-                       data={"template_id": "auto", "max_clips": "1", **data})
+    with httpx.Client(timeout=1800) as c, VID.open("rb") as fh:
+        r = c.post(f"{BASE}/api/jobs/upload",
+                   files={"file": (VID.name, fh, "video/mp4")},
+                   data={"template_id": "auto", "max_clips": "1", **data})
     ct = r.headers.get("content-type", "")
     body = r.json() if "json" in ct else {"raw": r.text[:300]}
     return r.status_code, body
@@ -226,7 +225,7 @@ def main() -> None:
         save()
 
     # ---------- TEST 3: clip-trim on an existing clip ----------
-    print(f"== TEST3 clip-trim", flush=True)
+    print("== TEST3 clip-trim", flush=True)
     try:
         job = get_job(jid)
         clips = job.get("clips") or []

@@ -10,7 +10,6 @@ the postgres superuser role, so row-level security does NOT apply to the
 backend — this dependency is the real access gate.
 """
 
-from typing import Optional
 
 from fastapi import Header, HTTPException
 
@@ -34,7 +33,7 @@ def _supabase():
     return _client
 
 
-def get_current_user(authorization: Optional[str] = Header(default=None)) -> dict:
+def get_current_user(authorization: str | None = Header(default=None)) -> dict:
     """Validate the Supabase JWT and return {id, email, metadata}.
 
     Raises 401 for missing/expired/invalid tokens so the frontend can

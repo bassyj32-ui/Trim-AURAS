@@ -82,11 +82,10 @@ def modal_volume_get(src: str, dst: Path) -> None:
 
 
 def upload(data: dict) -> tuple[int, dict]:
-    with httpx.Client(timeout=1800) as c:
-        with VID.open("rb") as fh:
-            r = c.post(f"{BASE}/api/jobs/upload",
-                       files={"file": (VID.name, fh, "video/mp4")},
-                       data={"template_id": "auto", "max_clips": "1", **data})
+    with httpx.Client(timeout=1800) as c, VID.open("rb") as fh:
+        r = c.post(f"{BASE}/api/jobs/upload",
+                   files={"file": (VID.name, fh, "video/mp4")},
+                   data={"template_id": "auto", "max_clips": "1", **data})
     ct = r.headers.get("content-type", "")
     body = r.json() if "json" in ct else {"raw": r.text[:300]}
     return r.status_code, body

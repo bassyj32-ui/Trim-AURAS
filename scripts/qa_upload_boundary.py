@@ -11,6 +11,7 @@ import argparse
 import json
 import time
 from pathlib import Path
+
 import httpx
 
 BASE = "https://bassyj32--trimaura-fastapi-app.modal.run"

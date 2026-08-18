@@ -1,6 +1,6 @@
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import SQLModel, Session, create_engine
 
-from app.config import settings, MODAL
+from app.config import MODAL, settings
 
 # On Modal we connect via Supabase's shared Supavisor pooler
 # (aws-0-*-pooler.supabase.com) which is IPv4-compatible, avoiding
@@ -24,6 +24,11 @@ engine = create_engine(
     connect_args=_connect_args,
     echo=(settings.app_env == "development"),
 )
+
+
+def get_session():
+    with Session(engine) as session:
+        yield session
 
 
 def init_db():

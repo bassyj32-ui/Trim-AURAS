@@ -2,15 +2,16 @@ import json
 import os
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+
 from sqlmodel import Session, select
 
+from app.config import MODAL
 from app.database import engine
 from app.models import Job, JobStatus, VideoClip
-from app.config import MODAL
 from app.pipeline.downloader import execute_download
-from app.pipeline.transcriber import execute_transcribe
+from app.pipeline.face_track import detect_face_track
 from app.pipeline.intelligence import (
     classify_content,
     execute_analyze,
@@ -19,9 +20,9 @@ from app.pipeline.intelligence import (
     select_signal_clips,
     snap_clips_to_signals,
 )
-from app.pipeline.video_editor import execute_render
-from app.pipeline.face_track import detect_face_track
 from app.pipeline.seo_generator import execute_seo
+from app.pipeline.transcriber import execute_transcribe
+from app.pipeline.video_editor import execute_render
 from app.storage import upload_to_r2
 
 # Persistent Volume paths (match modal_app.py)
@@ -51,7 +52,7 @@ def _diag(job_id: int, event: str, **extra):
         entry = {
             "job_id": job_id,
             "event": event,
-            "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            "ts": datetime.now(UTC).isoformat(timespec="milliseconds"),
         }
         entry.update(extra)
         with open(DIAG_DIR / f"job_{job_id}_diag.jsonl", "a", encoding="utf-8") as f:
@@ -575,8 +576,6 @@ async def generate_more_clips(job_id: int, count: int = 3):
 
         # SEO + upload
         with _Stage(job_id, "SEO_UPLOAD"):
-            transcript_text = _get_transcript_text(segments)
-
             CLIPS_DIR.mkdir(parents=True, exist_ok=True)
 
             with Session(engine) as session:

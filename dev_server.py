@@ -1,8 +1,7 @@
 # Dev server: serves static files + proxies /api/* to the deployed Modal backend
 import http.server
-import urllib.request
 import os
-import sys
+import urllib.request
 
 BACKEND = "https://bassyj32--trimaura-fastapi-app.modal.run"
 PORT = 8100
@@ -25,7 +24,7 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(502)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(f'{{"error":"proxy error: {str(e)}"}}'.encode())
+                self.wfile.write(f'{{"error":"proxy error: {e!s}"}}'.encode())
         else:
             super().do_GET()
 
@@ -49,7 +48,7 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(502)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(f'{{"error":"proxy error: {str(e)}"}}'.encode())
+                self.wfile.write(f'{{"error":"proxy error: {e!s}"}}'.encode())
         else:
             self.send_response(404)
             self.end_headers()

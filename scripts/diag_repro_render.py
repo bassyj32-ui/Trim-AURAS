@@ -16,7 +16,7 @@ VID = r"tmp\downloads\VAL_Agent_30_Launch.mov"
 
 # Synthetic face track: a person near center moving slightly, 0..95s every 1s
 FACE = [{"t": i, "cx": 0.45 + 0.05 * ((i // 10) % 2), "cy": 0.40 + 0.02 * (i % 5)}
-        for i in range(0, 96)]
+        for i in range(96)]
 
 
 def render(clip, face, tag):

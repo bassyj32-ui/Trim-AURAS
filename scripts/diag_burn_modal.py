@@ -17,7 +17,6 @@ Writes tmp/parity_burn_modal.json
 """
 import json
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -31,11 +30,10 @@ ENV = dict(__import__("os").environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
 
 
 def upload(data: dict) -> tuple[int, dict]:
-    with httpx.Client(timeout=1800) as c:
-        with VID.open("rb") as fh:
-            r = c.post(f"{BASE}/api/jobs/upload",
-                       files={"file": (VID.name, fh, "video/mp4")},
-                       data={"template_id": "auto", "max_clips": "3", **data})
+    with httpx.Client(timeout=1800) as c, VID.open("rb") as fh:
+        r = c.post(f"{BASE}/api/jobs/upload",
+                   files={"file": (VID.name, fh, "video/mp4")},
+                   data={"template_id": "auto", "max_clips": "3", **data})
     body = r.json() if "json" in r.headers.get("content-type", "") else {"raw": r.text[:300]}
     return r.status_code, body
 

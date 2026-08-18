@@ -3,19 +3,18 @@ import json
 import uuid
 from collections import Counter
 from pathlib import Path
-from typing import Optional
 
-import tempfile
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from app.api.sse import event_stream
 from app.auth import get_current_user
 from app.config import MODAL, settings
 from app.database import engine
 from app.models import Job, JobStatus, PushSubscription, VideoClip, clip_vault_cutoff
-from app.api.sse import event_stream
+from app.pipeline.downloader import _is_youtube
 from app.pipeline.orchestrator import (
     execute_pipeline,
     generate_more_clips,
@@ -23,7 +22,7 @@ from app.pipeline.orchestrator import (
     save_job_cookies,
     trim_clip,
 )
-from app.pipeline.downloader import _is_youtube
+from app.ssrf import validate_source_url
 from app.storage import generate_presigned_url
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -70,10 +69,10 @@ class CreateJobRequest(BaseModel):
     title: str = "Untitled Job"
     source_url: str
     template_id: str = "auto"  # "auto" = best-fit template by genre; or a specific id like "gaming_neon_v1"
-    campaign_rules: Optional[str] = None
+    campaign_rules: str | None = None
     max_clips: int = 5
-    preferred_height: Optional[int] = 1080  # Caps download/Frame.io proxy height; 0 = original file
-    cookies: Optional[str] = None  # Netscape cookies.txt content (for login-walled / bot-blocked sources)
+    preferred_height: int | None = 1080  # Caps download/Frame.io proxy height; 0 = original file
+    cookies: str | None = None  # Netscape cookies.txt content (for login-walled / bot-blocked sources)
     burn_captions: bool = False  # Burn animated word-level captions (karaoke, Opus-style)
     trim_silence: bool = False  # Cut inter-word pauses >0.5s for punchier clips
 
@@ -121,7 +120,7 @@ def _clip_posted(clip: VideoClip) -> list[str]:
 _VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".wmv", ".mts", ".m2ts")
 
 
-def _form_bool(value: Optional[str]) -> bool:
+def _form_bool(value: str | None) -> bool:
     """Coerce a multipart Form boolean to a real Python bool.
 
     SQLModel table models do NOT validate/coerce on construction (verified:
@@ -160,6 +159,13 @@ async def create_job(body: CreateJobRequest, user: dict = Depends(get_current_us
             "Source must be an http(s) video link (TikTok, Instagram, "
             "Google Drive, Frame.io, ...) or a direct video file URL",
         )
+
+    # SSRF guard — block private/localhost/metadata destinations before the
+    # pipeline hands the URL to yt-dlp/ffmpeg (which follow redirects).
+    if url.startswith(("http://", "https://")):
+        ssrf_error = validate_source_url(body.source_url)
+        if ssrf_error:
+            raise HTTPException(400, f"Source URL rejected: {ssrf_error}")
 
     # YouTube is disabled at this stage — reject it up-front so the user gets
     # a clear message instead of a job that dies in the download phase.
@@ -228,11 +234,11 @@ async def create_job(body: CreateJobRequest, user: dict = Depends(get_current_us
 async def upload_job(
     file: UploadFile = File(...),
     template_id: str = "auto",
-    campaign_rules: Optional[str] = Form(None),
+    campaign_rules: str | None = Form(None),
     max_clips: int = Form(5),
-    preferred_height: Optional[int] = Form(1080),  # match JSON route default; 0 = original
-    burn_captions: Optional[str] = Form(None),
-    trim_silence: Optional[str] = Form(None),
+    preferred_height: int | None = Form(1080),  # match JSON route default; 0 = original
+    burn_captions: str | None = Form(None),
+    trim_silence: str | None = Form(None),
     user: dict = Depends(get_current_user),
 ):
     suffix = Path(file.filename).suffix if file.filename else ".mp4"
@@ -443,7 +449,7 @@ def list_jobs(user: dict = Depends(get_current_user)):
         if jobs:
             rows = session.exec(
                 select(VideoClip.job_id).where(
-                    VideoClip.deleted == False,  # noqa: E712
+                    VideoClip.deleted == False,
                     VideoClip.job_id.in_([j.id for j in jobs]),
                 )
             ).all()
