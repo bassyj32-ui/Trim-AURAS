@@ -138,6 +138,43 @@ def _ensure_path():
             sys.path.insert(0, p)
 
 
+# ---------------------------------------------------------------------------
+# Retry classification
+# ---------------------------------------------------------------------------
+# Modal's `retries=N` retries the function on ANY exception (no
+# non-retryable marker in Modal 1.5.3). The pipeline raises ValueError /
+# RuntimeError for permanent problems (bad source URL, "Couldn't pick any
+# watchable clips", invalid trim bounds) where a re-run just burns compute
+# and paid AI calls. So workers classify via app.failures.is_transient:
+# permanent errors are written as FAILED and swallowed (Modal then won't
+# retry); transient errors re-raise so Modal's retries=1 respawns a fresh
+# container. OOM/container loss kills the container before our except runs —
+# Modal's retries=1 is what revives those jobs. The orchestrator also uses
+# is_transient so transient failures never even write FAILED to the DB.
+def _reset_to_retrying(job_id: int | None, exc: BaseException):
+    """Undo the terminal FAILED that the pipeline wrote so the frontend never
+    sees a FAILED flash (or a spurious 'Failed' push) before we retry."""
+    if job_id is None:
+        return
+    try:
+        from sqlmodel import Session
+
+        from app.database import engine
+        from app.models import Job, JobStatus
+
+        with Session(engine) as session:
+            job = session.get(Job, job_id)
+            if job and job.status != JobStatus.COMPLETED:
+                # The pipeline already wrote FAILED; revert to a non-terminal
+                # state. Keep progress where it was so the bar doesn't reset.
+                job.status = JobStatus.PENDING
+                job.error_message = f"Transient failure — retrying automatically: {str(exc)[:200]}"
+                session.add(job)
+                session.commit()
+    except Exception as e:
+        print(f"[retry] status reset failed (non-fatal): {e}")
+
+
 # ===========================================================================
 # 1. ASGI Web Endpoint
 # ===========================================================================
@@ -212,7 +249,10 @@ _PIPELINE_KWARGS = dict(
     # roughly halves per-clip render wall-clock under back-to-back load.
     cpu=2.0,
     scaledown_window=300,
-    retries=0,
+    # One automatic re-run on infra-level failure (OOM kill, container loss,
+    # network blip). Workers classify permanent errors themselves so a bad
+    # source URL never triggers a wasteful re-run (see _is_transient).
+    retries=1,
 )
 
 
@@ -295,14 +335,22 @@ def process_pipeline(job_id: int, job_data: dict | None = None):
         _sync_clips_to_volume(job_id)
         _write_status(job_id, "COMPLETED", 100)
     except Exception as exc:
-        # Best-effort: publish whatever clips were already rendered+committed
-        # so a mid-render failure doesn't lose the work that succeeded.
+        from app.failures import is_transient
+
+        if is_transient(exc):
+            # Transient failure — Modal's retries=1 will respawn this function.
+            # Undo the FAILED the pipeline wrote so the UI keeps waiting.
+            _reset_to_retrying(job_id, exc)
+            _write_status(job_id, "RETRYING", 0, str(exc))
+            raise
+        # Permanent failure — publish whatever clips already rendered, mark
+        # FAILED, and swallow so Modal does NOT re-run the paid pipeline.
         try:
             _sync_clips_to_volume(job_id)
         except Exception as sync_exc:
             print(f"[pipeline] failed-path clip sync error (non-fatal): {sync_exc}")
         _write_status(job_id, "FAILED", 0, str(exc))
-        raise
+        return
 
 
 @app.function(timeout=600, **_PIPELINE_KWARGS)
@@ -319,8 +367,14 @@ def process_generate_more(job_id: int, count: int = 3):
         _sync_clips_to_volume(job_id)
         _write_status(job_id, "COMPLETED", 100)
     except Exception as exc:
+        from app.failures import is_transient
+
+        if is_transient(exc):
+            _reset_to_retrying(job_id, exc)
+            _write_status(job_id, "RETRYING", 0, str(exc))
+            raise
         _write_status(job_id, "FAILED", 0, str(exc))
-        raise
+        return
 
 
 @app.function(timeout=600, **_PIPELINE_KWARGS)
@@ -359,9 +413,16 @@ def process_trim_clip(clip_id: int, new_start: float, new_end: float):
             _sync_clips_to_volume(job_id)
             _write_status(job_id, "COMPLETED", 100)
     except Exception as exc:
+        from app.failures import is_transient
+
+        if is_transient(exc):
+            _reset_to_retrying(job_id, exc)
+            if job_id is not None:
+                _write_status(job_id, "RETRYING", 0, str(exc))
+            raise
         if job_id is not None:
             _write_status(job_id, "FAILED", 0, str(exc))
-        raise
+        return
 
 
 def _sync_clips_to_volume(job_id: int):

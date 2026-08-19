@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 
 from app.config import MODAL
 from app.database import engine
+from app.failures import is_transient
 from app.models import Job, JobStatus, VideoClip
 from app.pipeline.downloader import execute_download
 from app.pipeline.face_track import detect_face_track
@@ -472,7 +473,18 @@ async def execute_pipeline(job_id: int):
             error=str(e)[:1000],
             tb=traceback.format_exc()[-2000:],
         )
-        _update_job(job_id, status=JobStatus.FAILED, error_message=str(e))
+        # On Modal, transient failures leave the job non-terminal so Modal's
+        # retries=1 can re-run it without flashing FAILED to the frontend or
+        # firing a spurious "Failed" push. Locally there is no retry, so keep
+        # the immediate FAILED. Recovery sweep is the final safety net.
+        if os.environ.get("MODAL") == "1" and is_transient(e):
+            _update_job(
+                job_id,
+                status=JobStatus.PENDING,
+                error_message=f"Transient failure — retrying automatically: {str(e)[:200]}",
+            )
+        else:
+            _update_job(job_id, status=JobStatus.FAILED, error_message=str(e))
         raise
 
     finally:
@@ -633,7 +645,14 @@ async def generate_more_clips(job_id: int, count: int = 3):
             error=str(e)[:1000],
             tb=traceback.format_exc()[-2000:],
         )
-        _update_job(job_id, status=JobStatus.FAILED, error_message=str(e))
+        if os.environ.get("MODAL") == "1" and is_transient(e):
+            _update_job(
+                job_id,
+                status=JobStatus.PENDING,
+                error_message=f"Transient failure — retrying automatically: {str(e)[:200]}",
+            )
+        else:
+            _update_job(job_id, status=JobStatus.FAILED, error_message=str(e))
         raise
 
     finally:
@@ -792,7 +811,14 @@ async def trim_clip(clip_id: int, new_start: float, new_end: float):
                 error=str(e)[:1000],
                 tb=traceback.format_exc()[-2000:],
             )
-            _update_job(job_id, status=JobStatus.FAILED, error_message=str(e))
+            if os.environ.get("MODAL") == "1" and is_transient(e):
+                _update_job(
+                    job_id,
+                    status=JobStatus.PENDING,
+                    error_message=f"Transient failure — retrying automatically: {str(e)[:200]}",
+                )
+            else:
+                _update_job(job_id, status=JobStatus.FAILED, error_message=str(e))
         raise
 
     finally:
