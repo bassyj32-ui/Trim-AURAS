@@ -94,6 +94,7 @@ class UserTier(SQLModel, table=True):
     """Per-user plan tier (free/starter/pro). Row created lazily on first use."""
     user_id: str = Field(primary_key=True)
     tier: str = Field(default="free")
+    permanent_credits: int = Field(default=0)  # purchased minutes, never expire
     subscription_id: str | None = None     # Dodo subscription id (recurring plans)
     subscription_status: str | None = None  # active | cancelled | expired | on_hold | paused
     period_end: datetime | None = None     # next billing date / expiry
@@ -125,8 +126,9 @@ class MonthlyUsage(SQLModel, table=True):
     """Monthly allowance ledger per user: credits (source minutes) used.
 
     Row per (user_id, 'YYYY-MM'). credits_used counts source minutes of jobs
-    started this month; topup_credits adds purchased minutes on top of the
-    tier's monthly allowance; jobs_used/clips_used track the other caps.
+    started this month; jobs_used/clips_used track the other caps. Purchased
+    minutes live in UserTier.permanent_credits (never expire) — topup_credits
+    here is legacy and no longer written.
     """
     user_id: str = Field(primary_key=True)
     month: str = Field(primary_key=True)      # 'YYYY-MM'

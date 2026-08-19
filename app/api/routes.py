@@ -3,7 +3,6 @@ import json
 import subprocess
 import uuid
 from collections import Counter
-from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
@@ -19,7 +18,6 @@ from app.dodo import create_checkout_session, handle_event, verify_webhook
 from app.models import (
     Job,
     JobStatus,
-    MonthlyUsage,
     PushSubscription,
     VideoClip,
     clip_vault_cutoff,
@@ -642,7 +640,8 @@ async def dodo_webhook(request: Request):
 def topup_credits(body: TopupRequest, user: dict = Depends(get_current_user)):
     """Admin-only manual credit grant (testing/support). Normal purchases go
     through POST /api/checkout → Dodo hosted checkout → payment.succeeded
-    webhook, which adds credits via the same field (monthly_usage.topup_credits).
+    webhook. Both paths credit the permanent wallet (UserTier.permanent_credits),
+    so purchased minutes never expire.
     """
     admins = {e.strip() for e in (settings.admin_emails or "").split(",") if e.strip()}
     if (user.get("email") or "") not in admins:
@@ -650,13 +649,12 @@ def topup_credits(body: TopupRequest, user: dict = Depends(get_current_user)):
             403,
             "Admin only — buy credits from the Billing modal instead.",
         )
-    month = datetime.now(UTC).strftime("%Y-%m")
     with Session(engine) as session:
-        usage = session.get(MonthlyUsage, (user["id"], month))
-        if usage is None:
-            usage = MonthlyUsage(user_id=user["id"], month=month)
-            session.add(usage)
-        usage.topup_credits += body.credits
+        tier = session.get(UserTier, user["id"])
+        if tier is None:
+            tier = UserTier(user_id=user["id"], tier="free")
+            session.add(tier)
+        tier.permanent_credits += body.credits
         session.commit()
     return get_usage_summary(user["id"])
 

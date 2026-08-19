@@ -88,7 +88,7 @@ def get_usage_summary(user_id: str) -> dict:
         usage = session.get(MonthlyUsage, (user_id, month))
         tier_row = session.get(UserTier, user_id)
     used = usage.credits_used if usage else 0
-    topups = usage.topup_credits if usage else 0
+    topups = tier_row.permanent_credits if tier_row else 0
     jobs = usage.jobs_used if usage else 0
     return {
         "tier": get_tier(user_id),
@@ -163,10 +163,12 @@ def check_create_job_quota(user_id: str, source_seconds: int | None = None) -> N
                 3600,
             )
 
-        # Monthly credits (source minutes — the real cost driver).
+        # Monthly credits (source minutes — the real cost driver). Purchased
+        # minutes live in the permanent wallet (UserTier) and never expire.
         usage = session.get(MonthlyUsage, (user_id, month))
         used = usage.credits_used if usage else 0
-        topups = usage.topup_credits if usage else 0
+        tier_row = session.get(UserTier, user_id)
+        topups = tier_row.permanent_credits if tier_row else 0
         balance = limits["monthly_credits"] + topups - used
 
         # Per-tier max source length per job (free 15 / starter 60 / pro 120).

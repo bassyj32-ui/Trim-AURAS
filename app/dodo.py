@@ -26,7 +26,7 @@ from sqlmodel import Session, select
 
 from app.config import settings
 from app.database import engine
-from app.models import MonthlyUsage, Payment, UserTier
+from app.models import Payment, UserTier
 
 logger = logging.getLogger(__name__)
 
@@ -285,9 +285,9 @@ def _on_refund(refund) -> None:
         if row is None or row.status != "succeeded":
             return
         if row.kind == "topup" and row.credits > 0:
-            usage = session.get(MonthlyUsage, (row.user_id, datetime.now(UTC).strftime("%Y-%m")))
-            if usage is not None and usage.topup_credits > 0:
-                usage.topup_credits = max(0, usage.topup_credits - row.credits)
+            tier = session.get(UserTier, row.user_id)
+            if tier is not None and tier.permanent_credits > 0:
+                tier.permanent_credits = max(0, tier.permanent_credits - row.credits)
         row.status = "refunded"
         row.updated_at = datetime.now(UTC)
         session.commit()
@@ -296,13 +296,12 @@ def _on_refund(refund) -> None:
 # --- Helpers ---------------------------------------------------------------
 
 def _grant_credits(session: Session, user_id: str, credits: int) -> None:
-    """Add purchased credits on top of the tier's monthly allowance."""
-    month = datetime.now(UTC).strftime("%Y-%m")
-    usage = session.get(MonthlyUsage, (user_id, month))
-    if usage is None:
-        usage = MonthlyUsage(user_id=user_id, month=month)
-        session.add(usage)
-    usage.topup_credits += credits
+    """Add purchased minutes to the user's permanent wallet (never expire)."""
+    row = session.get(UserTier, user_id)
+    if row is None:
+        row = UserTier(user_id=user_id, tier="free")
+        session.add(row)
+    row.permanent_credits += credits
 
 
 def _apply_tier(session: Session, user_id: str, plan: str,
