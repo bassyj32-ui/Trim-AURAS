@@ -22,7 +22,7 @@ BEGIN
   );
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = '';
 
 DROP TRIGGER IF EXISTS trg_usertier_set_email ON public.usertier;
 CREATE TRIGGER trg_usertier_set_email
