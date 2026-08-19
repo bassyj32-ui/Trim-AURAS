@@ -79,6 +79,8 @@ image = (
         "curl_cffi>=0.14.0,<0.16",
         # yt-dlp POT provider plugin (auto-registers bgutil:http provider)
         "bgutil-ytdlp-pot-provider>=1.3.0",
+        # Dodo Payments (merchant-of-record; USDT payouts) + webhook signing
+        "dodopayments[webhooks]==1.113.0",
         "psycopg2-binary>=2.9.0",
         "python-multipart>=0.0.12",
         "pydantic-settings>=2.4.0",
