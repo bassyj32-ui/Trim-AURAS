@@ -93,6 +93,7 @@ class QuotaUsage(SQLModel, table=True):
 class UserTier(SQLModel, table=True):
     """Per-user plan tier (free/starter/pro). Row created lazily on first use."""
     user_id: str = Field(primary_key=True)
+    email: str = Field(default="")   # stamped on first authenticated request (admin view)
     tier: str = Field(default="free")
     permanent_credits: int = Field(default=0)  # purchased minutes, never expire
     subscription_id: str | None = None     # Dodo subscription id (recurring plans)

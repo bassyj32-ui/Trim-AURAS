@@ -75,6 +75,23 @@ def get_tier(user_id: str) -> str:
         return row.tier if row.tier in settings.tier_limits else "free"
 
 
+def touch_user(user: dict) -> None:
+    """Upsert the UserTier row with the user's email (for the admin view).
+
+    Called on every authenticated request that has the full user dict, so
+    the admin dashboard can show real emails without a separate auth API.
+    """
+    user_id = user["id"]
+    email = (user.get("email") or "").strip()
+    with Session(engine) as session:
+        row = session.get(UserTier, user_id)
+        if row is None:
+            session.add(UserTier(user_id=user_id, email=email, tier="free"))
+        elif email and row.email != email:
+            row.email = email
+        session.commit()
+
+
 def get_tier_limits(user_id: str) -> dict:
     tier = get_tier(user_id)
     return settings.tier_limits.get(tier, _FALLBACK_LIMITS)

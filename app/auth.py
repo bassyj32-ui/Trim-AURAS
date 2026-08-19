@@ -11,11 +11,15 @@ backend — this dependency is the real access gate.
 """
 
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
 from app.config import settings
 
 _client = None
+
+
+def _admin_emails() -> set[str]:
+    return {e.strip().lower() for e in (settings.admin_emails or "").split(",") if e.strip()}
 
 
 def _supabase():
@@ -82,3 +86,14 @@ def get_current_user(authorization: str | None = Header(default=None)) -> dict:
         "email": user.email,
         "metadata": user.user_metadata or {},
     }
+
+
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    """Admin-only dependency: same JWT gate + email allow-list check.
+
+    Returns 403 for signed-in non-admins (they exist, just not allowed),
+    not 404 — hiding the endpoints from non-admins adds no security here.
+    """
+    if (user.get("email") or "").lower() not in _admin_emails():
+        raise HTTPException(403, "Admin access required")
+    return user

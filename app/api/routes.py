@@ -3,6 +3,7 @@ import json
 import subprocess
 import uuid
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
@@ -11,13 +12,15 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from app.api.sse import event_stream
-from app.auth import get_current_user
+from app.auth import get_current_user, require_admin
 from app.config import MODAL, settings
 from app.database import engine
 from app.dodo import create_checkout_session, handle_event, verify_webhook
 from app.models import (
     Job,
     JobStatus,
+    MonthlyUsage,
+    Payment,
     PushSubscription,
     UserTier,
     VideoClip,
@@ -38,6 +41,7 @@ from app.quotas import (
     check_create_job_quota,
     deduct_credits,
     get_usage_summary,
+    touch_user,
 )
 from app.ssrf import validate_source_url
 from app.share import make_share_token, verify_share_token
@@ -127,6 +131,10 @@ class PushSubscribeRequest(BaseModel):
 _PLATFORM_KEYS = ("tiktok", "youtube", "instagram")
 
 
+def _month_str() -> str:
+    return datetime.now(UTC).strftime("%Y-%m")
+
+
 def _clip_posted(clip: VideoClip) -> list[str]:
     """Parse a clip's posted_platforms JSON text into a list."""
     try:
@@ -175,6 +183,9 @@ def _owned_clip(session: Session, clip_id: int, user_id: str) -> VideoClip:
 
 @router.post("/jobs", status_code=202)
 async def create_job(body: CreateJobRequest, user: dict = Depends(get_current_user)):
+    # Stamp email for the admin view (no-op if already stored).
+    touch_user(user)
+
     # Quotas first — fail fast before any Modal worker is spawned.
     check_burst(user["id"], "job")
 
@@ -293,6 +304,9 @@ async def upload_job(
     trim_silence: str | None = Form(None),
     user: dict = Depends(get_current_user),
 ):
+    # Stamp email for the admin view (no-op if already stored).
+    touch_user(user)
+
     # Quotas first — fail fast before accepting the body / spawning work.
     check_burst(user["id"], "upload")
 
@@ -596,7 +610,12 @@ async def upload_finalize(
 @router.get("/tiers")
 def get_my_tier(user: dict = Depends(get_current_user)):
     """Current tier, monthly credit balance and caps (drives the quota UI)."""
-    return get_usage_summary(user["id"])
+    touch_user(user)
+    summary = get_usage_summary(user["id"])
+    summary["is_admin"] = (user.get("email") or "").lower() in {
+        e.strip().lower() for e in (settings.admin_emails or "").split(",") if e.strip()
+    }
+    return summary
 
 
 class TopupRequest(BaseModel):
@@ -638,22 +657,17 @@ async def dodo_webhook(request: Request):
 
 
 @router.post("/credits/topup")
-def topup_credits(body: TopupRequest, user: dict = Depends(get_current_user)):
+def topup_credits(body: TopupRequest, user: dict = Depends(require_admin)):
     """Admin-only manual credit grant (testing/support). Normal purchases go
     through POST /api/checkout → Dodo hosted checkout → payment.succeeded
     webhook. Both paths credit the permanent wallet (UserTier.permanent_credits),
     so purchased minutes never expire.
     """
-    admins = {e.strip() for e in (settings.admin_emails or "").split(",") if e.strip()}
-    if (user.get("email") or "") not in admins:
-        raise HTTPException(
-            403,
-            "Admin only — buy credits from the Billing modal instead.",
-        )
+    touch_user(user)
     with Session(engine) as session:
         tier = session.get(UserTier, user["id"])
         if tier is None:
-            tier = UserTier(user_id=user["id"], tier="free")
+            tier = UserTier(user_id=user["id"], email=user.get("email") or "", tier="free")
             session.add(tier)
         tier.permanent_credits += body.credits
         session.commit()
@@ -1238,7 +1252,7 @@ def unsubscribe_push(body: PushSubscribeRequest, user: dict = Depends(get_curren
 # --- Admin / Cleanup ---
 
 @router.post("/admin/cleanup", status_code=200)
-def admin_cleanup():
+def admin_cleanup(_: dict = Depends(require_admin)):
     """Delete stale jobs stuck in any non-terminal state. Keeps completed jobs."""
     from datetime import datetime, timedelta
     # Anything not COMPLETED that's been alive >24h is stuck (pipeline max is 1h).
@@ -1260,6 +1274,197 @@ def admin_cleanup():
                 deleted += 1
         session.commit()
     return {"deleted_jobs": deleted, "message": f"Cleaned up {deleted} old failed/pending jobs."}
+
+# --- Admin dashboard ---------------------------------------------------------
+# All /api/admin/* endpoints are gated by require_admin (email allow-list).
+
+
+class AdminCreditsRequest(BaseModel):
+    credits: int = Field(ge=-100000, le=100000)  # negative = revoke
+
+
+class AdminTierRequest(BaseModel):
+    tier: str  # free | starter | pro
+
+
+def _admin_user_row(user_id: str, session: Session) -> UserTier:
+    """Fetch or lazily create a UserTier row for an admin action target."""
+    row = session.get(UserTier, user_id)
+    if row is None:
+        row = UserTier(user_id=user_id, tier="free")
+        session.add(row)
+    return row
+
+
+@router.get("/admin/overview")
+def admin_overview(_: dict = Depends(require_admin)):
+    """Global health: users, jobs by status, clips, revenue, failures."""
+    with Session(engine) as session:
+        jobs = session.exec(select(Job)).all()
+        clips = session.exec(select(VideoClip).where(VideoClip.deleted == False)).all()  # noqa: E712
+        tiers = session.exec(select(UserTier)).all()
+        payments = session.exec(select(Payment)).all()
+        usage = session.exec(select(MonthlyUsage)).all()
+
+    status_counts = dict(Counter(j.status for j in jobs))
+    users = {t.user_id for t in tiers}
+    user_ids = {j.user_id for j in jobs} | {u.user_id for u in usage} | users
+    revenue_cents = sum(
+        p.amount_cents for p in payments if p.status == "succeeded"
+    )
+    paid_count = sum(1 for p in payments if p.status == "succeeded")
+    topup_credits = sum(t.permanent_credits for t in tiers)
+    month = _month_str()
+
+    return {
+        "total_users": len(user_ids),
+        "total_jobs": len(jobs),
+        "total_clips": len(clips),
+        "jobs_by_status": {
+            status: status_counts.get(status, 0)
+            for status in ("PENDING", "DOWNLOADING", "TRANSCRIBING", "ANALYZING", "RENDERING", "COMPLETED", "FAILED")
+        },
+        "revenue_cents": revenue_cents,
+        "paid_payments": paid_count,
+        "topup_credits": topup_credits,
+        "month": month,
+        "monthly_credits_used": sum(u.credits_used for u in usage),
+        "monthly_jobs": sum(u.jobs_used for u in usage),
+    }
+
+
+@router.get("/admin/users")
+def admin_users(_: dict = Depends(require_admin)):
+    """Every known user with tier, wallet, and this-month usage."""
+    with Session(engine) as session:
+        tiers = session.exec(select(UserTier)).all()
+        usage_rows = session.exec(select(MonthlyUsage)).all()
+        jobs = session.exec(select(Job)).all()
+        clips = session.exec(select(VideoClip).where(VideoClip.deleted == False)).all()  # noqa: E712
+        payments = session.exec(select(Payment)).all()
+
+    tier_map = {t.user_id: t for t in tiers}
+    usage_map: dict[str, dict[str, int]] = {}
+    for u in usage_rows:
+        d = usage_map.setdefault(u.user_id, {"credits": 0, "jobs": 0, "clips": 0})
+        d["credits"] += u.credits_used
+        d["jobs"] += u.jobs_used
+        d["clips"] += u.clips_used
+
+    job_counts: dict[str, int] = Counter(j.user_id for j in jobs)
+    clip_counts: dict[str, int] = Counter(c.job_id for c in clips)
+    job_owner = {j.id: j.user_id for j in jobs}
+    per_user_clips: dict[str, int] = Counter(
+        job_owner[clip_id] for clip_id in clip_counts if clip_id in job_owner
+    )
+
+    paid_by_user: dict[str, int] = Counter(
+        p.user_id for p in payments if p.status == "succeeded"
+    )
+    last_job_at: dict[str, str] = {}
+    for j in sorted(jobs, key=lambda j: j.created_at or datetime.min.replace(tzinfo=UTC)):
+        if j.user_id not in last_job_at:
+            last_job_at[j.user_id] = (j.created_at or datetime.min.replace(tzinfo=UTC)).isoformat()
+
+    results = []
+    all_user_ids = set(tier_map) | set(usage_map) | set(job_counts) | set(paid_by_user)
+    for uid in sorted(all_user_ids):
+        t = tier_map.get(uid)
+        results.append({
+            "user_id": uid,
+            "email": t.email if t else "",
+            "tier": t.tier if t else "free",
+            "subscription_status": t.subscription_status if t else None,
+            "permanent_credits": t.permanent_credits if t else 0,
+            "total_jobs": job_counts.get(uid, 0),
+            "total_clips": per_user_clips.get(uid, 0),
+            "month_credits_used": usage_map.get(uid, {}).get("credits", 0),
+            "month_jobs": usage_map.get(uid, {}).get("jobs", 0),
+            "paid_payments": paid_by_user.get(uid, 0),
+            "last_job_at": last_job_at.get(uid),
+        })
+    return {"users": results}
+
+
+@router.get("/admin/jobs")
+def admin_jobs(limit: int = 50, _: dict = Depends(require_admin)):
+    """Recent jobs across all users (newest first) with owner email."""
+    with Session(engine) as session:
+        jobs = session.exec(
+            select(Job).order_by(Job.id.desc()).limit(min(max(limit, 1), 200))
+        ).all()
+        tiers = session.exec(select(UserTier)).all()
+        clips = session.exec(select(VideoClip).where(VideoClip.deleted == False)).all()  # noqa: E712
+    email_map = {t.user_id: t.email for t in tiers}
+    clip_count = Counter(c.job_id for c in clips)
+    return {
+        "jobs": [
+            {
+                "id": j.id,
+                "user_id": j.user_id,
+                "email": email_map.get(j.user_id, ""),
+                "title": j.title,
+                "source_url": j.source_url,
+                "template_id": j.template_id,
+                "status": j.status,
+                "progress_percentage": j.progress_percentage,
+                "source_seconds": j.source_seconds,
+                "clips": clip_count.get(j.id, 0),
+                "error_message": j.error_message,
+                "created_at": j.created_at.isoformat() if j.created_at else None,
+            }
+            for j in jobs
+        ]
+    }
+
+
+@router.post("/admin/users/{user_id}/credits")
+def admin_grant_credits(
+    user_id: str,
+    body: AdminCreditsRequest,
+    _: dict = Depends(require_admin),
+):
+    """Grant or revoke permanent credits for any user (support/tests)."""
+    with Session(engine) as session:
+        row = _admin_user_row(user_id, session)
+        row.permanent_credits = max(0, row.permanent_credits + body.credits)
+        session.commit()
+        return {"user_id": user_id, "permanent_credits": row.permanent_credits}
+
+
+@router.post("/admin/users/{user_id}/tier")
+def admin_set_tier(
+    user_id: str,
+    body: AdminTierRequest,
+    _: dict = Depends(require_admin),
+):
+    """Force a user's tier (free/starter/pro) — e.g. comped access."""
+    if body.tier not in settings.tier_limits:
+        raise HTTPException(400, "Unknown tier — pick free, starter or pro.")
+    with Session(engine) as session:
+        row = _admin_user_row(user_id, session)
+        row.tier = body.tier
+        row.updated_at = datetime.now(UTC)
+        session.commit()
+        return {"user_id": user_id, "tier": row.tier}
+
+
+@router.post("/admin/jobs/{job_id}/retry")
+async def admin_retry_job(job_id: int, _: dict = Depends(require_admin)):
+    """Re-dispatch a FAILED job from the saved source (no re-download probe)."""
+    with Session(engine) as session:
+        job = session.get(Job, job_id)
+        if job is None:
+            raise HTTPException(404, "Job not found")
+        if job.status not in (JobStatus.FAILED, JobStatus.PENDING):
+            raise HTTPException(400, f"Only failed/pending jobs can be retried (got {job.status})")
+        job.status = JobStatus.PENDING
+        job.error_message = None
+        job.progress_percentage = 0
+        session.add(job)
+        session.commit()
+    await _dispatch_pipeline(job_id, None)
+    return {"job_id": job_id, "status": "PENDING", "message": "Job re-dispatched"}
 
 # --- Templates ---
 

@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#C9A056">
+<meta name="color-scheme" content="light">
+<title>TrimAURA Admin</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23C9A056'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%23FFFFFF'%3E%E2%97%80%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/styles.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/auth.js"></script>
+<style>
+  body { padding-bottom: 60px; }
+  .admin-topbar { display:flex; align-items:center; gap:10px; padding:18px 20px 12px; max-width:1080px; margin:0 auto; }
+  .admin-topbar .brand-avatar { width:30px; height:30px; }
+  .admin-topbar h1 { font-size:18px; font-weight:800; letter-spacing:0.3px; }
+  .admin-topbar .spacer { flex:1; }
+  .admin-topbar button { font-size:12px; }
+  .admin-wrap { max-width:1080px; margin:0 auto; padding:0 20px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:14px 0 20px; }
+  .card { background:var(--card); border:1px solid var(--hairline); border-radius:14px; padding:14px 16px; box-shadow:0 1px 2px rgba(0,0,0,0.04); }
+  .card .num { font-size:24px; font-weight:800; letter-spacing:-0.5px; }
+  .card .lbl { font-size:11px; color:var(--ink-dim); margin-top:3px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; }
+  .card.bad .num { color:var(--warn); }
+  .panel { background:var(--card); border:1px solid var(--hairline); border-radius:16px; padding:16px; margin-bottom:20px; }
+  .panel h2 { font-size:14px; font-weight:700; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between; }
+  .panel h2 .hint { font-size:11px; font-weight:500; color:var(--ink-dim); }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th { text-align:left; font-size:10.5px; font-weight:700; letter-spacing:0.6px; text-transform:uppercase; color:var(--ink-dim); padding:6px 8px; border-bottom:1px solid var(--hairline); white-space:nowrap; }
+  td { padding:8px; border-bottom:1px solid var(--hairline); vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  .mono { font-family:"IBM Plex Mono",monospace; font-size:11.5px; }
+  .badge { display:inline-block; font-size:10px; font-weight:700; letter-spacing:0.4px; padding:2px 7px; border-radius:999px; text-transform:uppercase; }
+  .badge.ok { background:rgba(58,157,94,0.14); color:var(--ok); }
+  .badge.warn { background:rgba(217,154,43,0.16); color:var(--warn); }
+  .badge.muted { background:rgba(154,146,132,0.16); color:var(--ink-dim); }
+  .email { color:var(--ink); font-weight:600; }
+  .sub { color:var(--ink-dim); font-size:11px; }
+  .clickable { color:var(--gold-deep); font-weight:600; cursor:pointer; }
+  .btn-small { font-size:11px; padding:5px 10px; }
+  .pill { display:inline-block; margin:2px 3px 2px 0; padding:2px 8px; border-radius:999px; background:rgba(201,160,86,0.14); color:var(--gold-deep); font-size:11px; font-weight:600; }
+  .section-sub { font-size:11px; color:var(--ink-dim); margin:-8px 0 14px; }
+  .status-gate { text-align:center; padding:60px 20px; }
+  .status-gate .title { font-size:16px; font-weight:700; margin-bottom:6px; }
+  .status-gate .sub { font-size:12.5px; }
+  .status-gate button { margin-top:14px; }
+  input.inline { width:72px; padding:4px 6px; border:1px solid var(--hairline); border-radius:8px; font-size:11.5px; font-family:"IBM Plex Mono",monospace; background:var(--bg-soft); }
+  select.inline { padding:4px 6px; border:1px solid var(--hairline); border-radius:8px; font-size:11.5px; background:var(--bg-soft); }
+  .row-actions { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+  <div class="admin-topbar">
+    <div class="brand-avatar"><span></span></div>
+    <h1>ADMIN</h1>
+    <span class="spacer"></span>
+    <button class="btn-small btn-primary" id="refreshBtn">Refresh</button>
+    <button class="btn-small btn-outline" id="signoutBtn">Sign out</button>
+  </div>
+
+  <div class="admin-wrap" id="gateWrap" style="display:none;">
+    <div class="status-gate">
+      <div class="title" id="gateTitle">Checking access…</div>
+      <div class="sub" id="gateSub"></div>
+      <button class="btn-primary" id="gateBtn" style="display:none;border-radius:12px;padding:10px 18px;border:none;background:var(--gold-deep);color:#fff;font-weight:700;font-size:13px;">Sign in</button>
+    </div>
+  </div>
+
+  <div class="admin-wrap" id="dashWrap" style="display:none;">
+    <div class="cards" id="cardsRow"></div>
+    <div class="panel">
+      <h2>Users <span class="hint" id="usersHint"></span></h2>
+      <div style="overflow-x:auto;"><table id="usersTable"></table></div>
+    </div>
+    <div class="panel">
+      <h2>Recent jobs <span class="hint">newest first</span></h2>
+      <div style="overflow-x:auto;"><table id="jobsTable"></table></div>
+    </div>
+    <div class="panel">
+      <h2>Ops</h2>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <button class="btn-small btn-outline" id="cleanupBtn">Clean stale jobs (&gt;24h, non-completed)</button>
+        <span class="sub" id="cleanupResult"></span>
+      </div>
+    </div>
+  </div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+  var toast = document.getElementById('toast');
+  var gateWrap = document.getElementById('gateWrap');
+  var dashWrap = document.getElementById('dashWrap');
+  var gateTitle = document.getElementById('gateTitle');
+  var gateSub = document.getElementById('gateSub');
+  var gateBtn = document.getElementById('gateBtn');
+
+  function showToast(msg, isError) {
+    toast.textContent = msg;
+    toast.classList.toggle('error', !!isError);
+    toast.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { toast.classList.remove('show'); }, 2600);
+  }
+
+  function escHtml(s) { if (s === null || s === undefined) return ''; var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  function statusBadge(status) {
+    var cls = status === 'COMPLETED' ? 'ok' : (status === 'FAILED' ? 'warn' : 'muted');
+    return '<span class="badge ' + cls + '">' + escHtml(status) + '</span>';
+  }
+
+  function tierPill(tier) {
+    var color = tier === 'pro' ? 'var(--gold-deep)' : tier === 'starter' ? 'var(--gold)' : 'var(--ink-dim)';
+    return '<span class="pill" style="color:' + color + ';">' + escHtml(tier) + '</span>';
+  }
+
+  function timeAgo(iso) {
+    if (!iso) return '—';
+    var diff = Date.now() - new Date(iso).getTime();
+    if (diff < 60000) return 'just now';
+    if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+    if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+    return Math.floor(diff / 86400000) + 'd ago';
+  }
+
+  // --- API helpers (auth.js injects the bearer token) ---
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = opts.headers || {};
+    if (opts.body && typeof opts.body !== 'string') {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(opts.body);
+    }
+    return fetch('/api/' + path, opts).then(function (res) {
+      return res.json().then(function (data) {
+        if (!res.ok) throw new Error(data.detail || res.statusText || 'Request failed');
+        return data;
+      });
+    });
+  }
+
+  // --- Gate ---
+  function renderGate(msg, signIn) {
+    gateWrap.style.display = 'block';
+    dashWrap.style.display = 'none';
+    gateTitle.textContent = msg;
+    gateBtn.style.display = signIn ? 'inline-block' : 'none';
+    if (signIn) gateBtn.onclick = function () { if (window.TrimAuraAuth) window.TrimAuraAuth.openAuth('Sign in as an admin'); };
+  }
+
+  // --- Overview cards ---
+  function renderCards(ov) {
+    var row = document.getElementById('cardsRow');
+    var cards = [
+      { n: ov.total_users, l: 'Users' },
+      { n: ov.total_jobs, l: 'Jobs' },
+      { n: ov.total_clips, l: 'Clips' },
+      { n: ov.jobs_by_status.COMPLETED + '/' + ov.jobs_by_status.FAILED, l: 'Done/Failed', bad: ov.jobs_by_status.FAILED > 0 },
+      { n: ov.jobs_by_status.RENDERING + '/' + ov.jobs_by_status.DOWNLOADING, l: 'In flight' },
+      { n: '$' + (ov.revenue_cents / 100).toFixed(2), l: 'Revenue' },
+      { n: ov.paid_payments, l: 'Paid orders' },
+      { n: ov.topup_credits, l: 'Top-up min' },
+      { n: ov.monthly_jobs + ' / ' + ov.monthly_credits_used + 'm', l: 'This month (' + ov.month + ')' },
+    ];
+    row.innerHTML = cards.map(function (c) {
+      return '<div class="card' + (c.bad ? ' bad' : '') + '"><div class="num">' + escHtml(c.n) + '</div><div class="lbl">' + escHtml(c.l) + '</div></div>';
+    }).join('');
+  }
+
+  // --- Users table ---
+  function renderUsers(users) {
+    var t = document.getElementById('usersTable');
+    document.getElementById('usersHint').textContent = users.length + ' users';
+    t.innerHTML = '<thead><tr><th>Email</th><th>Tier</th><th>Wallet</th><th>Month</th><th>Totals</th><th>Paid</th><th>Last job</th><th>Actions</th></tr></thead><tbody>' +
+      users.map(function (u) {
+        return '<tr>' +
+          '<td><div class="email">' + escHtml(u.email || '(no email)') + '</div><div class="sub mono">' + escHtml(u.user_id.slice(0, 12)) + '…</div></td>' +
+          '<td>' + tierPill(u.tier) + (u.subscription_status && u.subscription_status !== 'active' ? '<div class="sub">' + escHtml(u.subscription_status) + '</div>' : '') + '</td>' +
+          '<td class="mono">' + u.permanent_credits + '</td>' +
+          '<td class="mono">' + u.month_jobs + 'j / ' + u.month_credits_used + 'm</td>' +
+          '<td class="mono">' + u.total_jobs + 'j / ' + u.total_clips + 'c</td>' +
+          '<td class="mono">' + u.paid_payments + '</td>' +
+          '<td class="sub">' + timeAgo(u.last_job_at) + '</td>' +
+          '<td><div class="row-actions">' +
+            '<input class="inline" id="cred_' + escHtml(u.user_id) + '" type="number" value="0" step="50" min="-100000" max="100000" aria-label="credits to grant">' +
+            '<button class="btn-small btn-outline" data-grant="' + escHtml(u.user_id) + '">Grant</button>' +
+            '<select class="inline" data-tier-sel="' + escHtml(u.user_id) + '">' +
+              '<option value="free"' + (u.tier === 'free' ? ' selected' : '') + '>free</option>' +
+              '<option value="starter"' + (u.tier === 'starter' ? ' selected' : '') + '>starter</option>' +
+              '<option value="pro"' + (u.tier === 'pro' ? ' selected' : '') + '>pro</option>' +
+            '</select>' +
+            '<button class="btn-small btn-outline" data-tier="' + escHtml(u.user_id) + '">Set</button>' +
+          '</div></td>' +
+        '</tr>';
+      }).join('') + '</tbody>';
+
+    t.querySelectorAll('[data-grant]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var uid = b.dataset.grant;
+        var input = document.getElementById('cred_' + uid);
+        var n = parseInt(input.value, 10);
+        if (!n || isNaN(n)) { showToast('Enter a credit amount'); return; }
+        api('admin/users/' + encodeURIComponent(uid) + '/credits', { method: 'POST', body: { credits: n } })
+          .then(function (d) { showToast('Wallet → ' + d.permanent_credits + ' min'); loadAll(); })
+          .catch(function (e) { showToast(e.message, true); });
+      });
+    });
+    t.querySelectorAll('[data-tier]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var uid = b.dataset.tier;
+        var sel = t.querySelector('[data-tier-sel="' + uid + '"]');
+        api('admin/users/' + encodeURIComponent(uid) + '/tier', { method: 'POST', body: { tier: sel.value } })
+          .then(function () { showToast('Tier → ' + sel.value); loadAll(); })
+          .catch(function (e) { showToast(e.message, true); });
+      });
+    });
+  }
+
+  // --- Jobs table ---
+  function renderJobs(jobs) {
+    var t = document.getElementById('jobsTable');
+    t.innerHTML = '<thead><tr><th>#</th><th>Email</th><th>Title</th><th>Status</th><th>Progress</th><th>Clips</th><th>Template</th><th>Age</th><th></th></tr></thead><tbody>' +
+      jobs.map(function (j) {
+        var retry = j.status === 'FAILED'
+          ? '<button class="btn-small btn-outline" data-retry="' + j.id + '">Retry</button>'
+          : '';
+        return '<tr>' +
+          '<td class="mono">' + j.id + '</td>' +
+          '<td class="sub">' + escHtml(j.email || '—') + '</td>' +
+          '<td><div class="email" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(j.title) + '</div><div class="sub mono" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(j.source_url) + '</div></td>' +
+          '<td>' + statusBadge(j.status) + '</td>' +
+          '<td class="mono">' + j.progress_percentage + '%</td>' +
+          '<td class="mono">' + j.clips + '</td>' +
+          '<td class="sub mono">' + escHtml(j.template_id) + '</td>' +
+          '<td class="sub">' + timeAgo(j.created_at) + '</td>' +
+          '<td>' + retry + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody>';
+
+    t.querySelectorAll('[data-retry]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        api('admin/jobs/' + b.dataset.retry + '/retry', { method: 'POST' })
+          .then(function () { showToast('Job ' + b.dataset.retry + ' re-dispatched'); loadAll(); })
+          .catch(function (e) { showToast(e.message, true); });
+      });
+    });
+  }
+
+  // --- Load ---
+  function loadAll() {
+    Promise.all([
+      api('admin/overview'),
+      api('admin/users'),
+      api('admin/jobs?limit=50'),
+    ]).then(function (rs) {
+      renderCards(rs[0]);
+      renderUsers(rs[1].users);
+      renderJobs(rs[2].jobs);
+    }).catch(function (e) {
+      renderGate('Failed to load', false);
+      gateSub.textContent = e.message;
+    });
+  }
+
+  // --- Boot ---
+  function boot() {
+    gateSub.textContent = '';
+    api('tiers').then(function (t) {
+      if (!t.is_admin) {
+        renderGate('You are not an admin', false);
+        gateSub.textContent = 'This dashboard is restricted to the approved admin emails.';
+        return;
+      }
+      gateWrap.style.display = 'none';
+      dashWrap.style.display = 'block';
+      loadAll();
+    }).catch(function (e) {
+      var code = (e.message || '').toLowerCase();
+      var signedIn = !!(window.__authToken);
+      if (/invite only|not approved/i.test(e.message || '')) {
+        renderGate('Your account is not approved yet', false);
+        gateSub.textContent = 'This app is invite-only. Contact the admin to get access.';
+      } else if (!signedIn || code.indexOf('expired') >= 0 || code.indexOf('invalid') >= 0 || e.status === 401) {
+        renderGate('Sign in as an admin to open the dashboard', true);
+        gateSub.textContent = 'Google sign-in is required.';
+      } else {
+        renderGate('Access check failed', false);
+        gateSub.textContent = e.message;
+      }
+    });
+  }
+
+  document.getElementById('refreshBtn').addEventListener('click', loadAll);
+  document.getElementById('signoutBtn').addEventListener('click', function () {
+    if (window.TrimAuraAuth) window.TrimAuraAuth.signOut();
+  });
+  document.getElementById('cleanupBtn').addEventListener('click', function () {
+    api('admin/cleanup', { method: 'POST' }).then(function (d) {
+      var el = document.getElementById('cleanupResult');
+      if (el) el.textContent = d.message;
+      loadAll();
+    }).catch(function (e) { showToast(e.message, true); });
+  });
+
+  // auth.js refreshes/patches synchronously at boot, but the very first
+  // /api/* call can race its async getSession(). Retry access check if 401.
+  boot();
+})();
+</script>
+</body>
+</html>
