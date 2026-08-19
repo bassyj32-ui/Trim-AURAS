@@ -500,14 +500,30 @@ def snap_clips_to_signals(
     video_signals: dict[str, Any] | None,
     tolerance: float = 2.0,
     min_clip_s: float = 15.0,
+    max_clip_s: float | None = None,
 ) -> list[dict[str, Any]]:
     """Force clip boundaries onto scene cuts and away from black ranges.
 
     A hard post-pass so the rules hold even if DeepSeek ignores them:
+    - Caps every clip at max_clip_s (cost protection — render scales with length).
     - Snaps each clip start/end to the nearest scene boundary (within 2s).
     - Pushes starts out of black ranges and pulls ends back before them.
     - Drops clips that sit entirely inside dead air; never returns empty.
     """
+    cap = max_clip_s if max_clip_s is not None else float(settings.quota_max_clip_seconds)
+
+    # Unconditional duration cap — applied BEFORE the early returns so a job
+    # with no signal data still gets the bound.
+    capped: list[dict[str, Any]] = []
+    for c in clips:
+        start = float(c.get("start", 0.0))
+        end = float(c.get("end", 0.0))
+        if end - start > cap:
+            end = start + cap
+        c["start"], c["end"] = round(start, 2), round(end, 2)
+        capped.append(c)
+    clips = capped
+
     if not video_signals:
         return clips
     scene_times = sorted(video_signals.get("scene_times") or [])

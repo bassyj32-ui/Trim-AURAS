@@ -255,6 +255,11 @@ _PIPELINE_KWARGS = dict(
     retries=1,
 )
 
+# Lighter ops don't need 2 vCPU — trim re-renders one short clip and
+# generate-more reuses the saved source + transcript, so halving their
+# container cost is invisible to users.
+_LIGHT_PIPELINE_KWARGS = dict(_PIPELINE_KWARGS, cpu=1.0)
+
 
 @app.function(timeout=3600, **_PIPELINE_KWARGS)
 def process_pipeline(job_id: int, job_data: dict | None = None):
@@ -353,7 +358,7 @@ def process_pipeline(job_id: int, job_data: dict | None = None):
         return
 
 
-@app.function(timeout=600, **_PIPELINE_KWARGS)
+@app.function(timeout=600, **_LIGHT_PIPELINE_KWARGS)
 def process_generate_more(job_id: int, count: int = 3):
     _write_status(job_id, "ANALYZING", 40)
     try:
@@ -377,7 +382,7 @@ def process_generate_more(job_id: int, count: int = 3):
         return
 
 
-@app.function(timeout=600, **_PIPELINE_KWARGS)
+@app.function(timeout=600, **_LIGHT_PIPELINE_KWARGS)
 def process_trim_clip(clip_id: int, new_start: float, new_end: float):
     """Re-render a single clip with tightened boundaries (worker).
 

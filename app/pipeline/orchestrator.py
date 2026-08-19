@@ -29,6 +29,28 @@ from app.storage import upload_to_r2
 # Persistent Volume paths (match modal_app.py)
 SOURCE_CACHE_DIR = Path("/mnt/data/sources")
 CLIPS_DIR = Path("/mnt/data/clips")
+
+
+def _template_uses_cover(template_id: str) -> bool:
+    """True if the template's video slot crops with fit_mode=cover.
+
+    Face tracking is only consumed by cover-mode templates (video_editor reads
+    the track only when fit_mode == "cover"), so the full-video face scan can
+    be skipped for contain/fill templates. Defaults to True on any load error
+    so an unknown template keeps the historical (safe) behavior.
+    """
+    try:
+        cfg = json.loads(
+            (Path("assets") / "templates" / template_id / "template.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        slot = cfg.get("video_slot") or {}
+        return slot.get("fit_mode", "cover") == "cover"
+    except Exception:
+        return True
+
+
 # Cookies.txt per job (Netscape format). On Modal this lives on the shared
 # Volume so any worker (pipeline OR generate-more) can re-download with it.
 COOKIES_DIR = Path("/mnt/data/cookies") if MODAL else Path("tmp") / "cookies"
@@ -335,14 +357,6 @@ async def execute_pipeline(job_id: int):
             # Cheap FFmpeg "sight" probes: scene cuts, loud moments, dead air
             video_signals = await asyncio.to_thread(extract_video_signals, video_path)
 
-            # Face-aware crop: detect the speaker track ONCE, persist it on the
-            # Job, and reuse it for every render (pipeline, generate-more, trim).
-            # Empty track -> renders keep the static center crop.
-            face_track = await asyncio.to_thread(detect_face_track, video_path)
-            if face_track:
-                _update_job(job_id, face_track_json=json.dumps(face_track))
-                print(f"[pipeline] face track: {len(face_track)} samples saved")
-
             has_speech = len(_get_transcript_text(segments).strip()) >= 10
             content_type = classify_content(segments, video_signals)
             if has_speech:
@@ -366,6 +380,36 @@ async def execute_pipeline(job_id: int):
                     f"selected {len(clips)} clips from signals"
                 )
             clips = snap_clips_to_signals(clips, video_signals)
+
+            # Resolve "auto" template now (moved up from the render phase) so we
+            # can decide below whether the expensive full-video face scan is
+            # needed, and persist the pick so the frontend shows the real
+            # template and generate-more reuses it.
+            template_id = job.template_id or "auto"
+            if template_id == "auto":
+                template_id = recommend_template(
+                    content_type,
+                    title=job.title or "",
+                    transcript_text=_get_transcript_text(segments),
+                )
+                _update_job(job_id, template_id=template_id)
+                print(
+                    f"[pipeline] auto template -> {template_id} "
+                    f"(content_type={content_type})"
+                )
+
+            # Face-aware crop: detect the speaker track ONCE, persist it on the
+            # Job, and reuse it for every render (pipeline, generate-more, trim).
+            # Only cover-mode templates read the track — skip the full-video
+            # scan (it decodes every frame) for contain/fill templates. An empty
+            # track means renders keep the static center crop.
+            face_track: list = []
+            if _template_uses_cover(template_id):
+                face_track = await asyncio.to_thread(detect_face_track, video_path)
+                if face_track:
+                    _update_job(job_id, face_track_json=json.dumps(face_track))
+                    print(f"[pipeline] face track: {len(face_track)} samples saved")
+
             _diag(
                 job_id, "ANALYZE_RESULT",
                 content_type=content_type,
@@ -383,20 +427,6 @@ async def execute_pipeline(job_id: int):
         # --- Phase 4: Render ---
         with _Stage(job_id, "RENDERING"):
             _update_job(job_id, status=JobStatus.RENDERING, progress_percentage=60)
-            # Resolve "auto" template by genre and persist the pick so the frontend
-            # shows the real template and generate-more reuses it.
-            template_id = job.template_id or "auto"
-            if template_id == "auto":
-                template_id = recommend_template(
-                    content_type,
-                    title=job.title or "",
-                    transcript_text=_get_transcript_text(segments),
-                )
-                _update_job(job_id, template_id=template_id)
-                print(
-                    f"[pipeline] auto template -> {template_id} "
-                    f"(content_type={content_type})"
-                )
             rendered_paths = await execute_render(
                 video_path,
                 clips,

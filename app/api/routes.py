@@ -2,18 +2,26 @@ import asyncio
 import json
 import uuid
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from app.api.sse import event_stream
 from app.auth import get_current_user
 from app.config import MODAL, settings
 from app.database import engine
-from app.models import Job, JobStatus, PushSubscription, VideoClip, clip_vault_cutoff
+from app.models import (
+    Job,
+    JobStatus,
+    MonthlyUsage,
+    PushSubscription,
+    VideoClip,
+    clip_vault_cutoff,
+)
 from app.pipeline.downloader import _is_youtube
 from app.pipeline.orchestrator import (
     execute_pipeline,
@@ -22,7 +30,14 @@ from app.pipeline.orchestrator import (
     save_job_cookies,
     trim_clip,
 )
-from app.quotas import check_burst, check_clip_quota, check_create_job_quota
+from app.probe import clamp_render_height, probe_and_check
+from app.quotas import (
+    check_burst,
+    check_clip_quota,
+    check_create_job_quota,
+    deduct_credits,
+    get_usage_summary,
+)
 from app.ssrf import validate_source_url
 from app.storage import generate_presigned_url
 
@@ -155,7 +170,6 @@ def _owned_clip(session: Session, clip_id: int, user_id: str) -> VideoClip:
 async def create_job(body: CreateJobRequest, user: dict = Depends(get_current_user)):
     # Quotas first — fail fast before any Modal worker is spawned.
     check_burst(user["id"], "job")
-    check_create_job_quota(user["id"])
 
     # Server-side clamp so a client can't ask for 99 clips and burn compute.
     max_clips = max(1, min(body.max_clips or 1, settings.quota_max_clips_per_job))
@@ -184,6 +198,24 @@ async def create_job(body: CreateJobRequest, user: dict = Depends(get_current_us
             "(mp4/mov), Google Drive, Frame.io, or upload the file instead",
         )
 
+    # Cost pre-flight: probe duration/resolution and reject over-cap sources
+    # BEFORE a Modal worker is spawned (best-effort — a failed probe passes).
+    # The probed duration also drives the monthly credit charge below.
+    src_seconds: int | None = None
+    if url.startswith(("http://", "https://")):
+        probe_error, src_seconds = probe_and_check(
+            body.source_url, is_local=False, cookies=body.cookies or ""
+        )
+        if probe_error:
+            raise HTTPException(422, probe_error)
+
+    # Tier quotas (jobs/day, concurrent, monthly credits) — now that we know
+    # how many source minutes this job costs.
+    check_create_job_quota(user["id"], src_seconds)
+
+    # Cost cap: never render higher than quota_max_render_height (no 4K/8K encodes).
+    pref_h = clamp_render_height(body.preferred_height)
+
     with Session(engine) as session:
         job = Job(
             user_id=user["id"],
@@ -192,14 +224,18 @@ async def create_job(body: CreateJobRequest, user: dict = Depends(get_current_us
             template_id=body.template_id,
             campaign_rules=body.campaign_rules,
             max_clips=max_clips,
-            preferred_height=body.preferred_height,
+            preferred_height=pref_h,
             burn_captions=body.burn_captions,
             trim_silence=body.trim_silence,
+            source_seconds=src_seconds,
         )
         session.add(job)
         session.commit()
         session.refresh(job)
         job_id = job.id
+        # Charge credits atomically with job creation (same session/commit).
+        deduct_credits(user["id"], src_seconds, session)
+        session.commit()
 
     # Persist optional cookies.txt so the pipeline worker (and later
     # generate-more re-downloads) can authorize YouTube/TikTok/Instagram.
@@ -223,10 +259,11 @@ async def create_job(body: CreateJobRequest, user: dict = Depends(get_current_us
         "template_id": body.template_id,
         "campaign_rules": body.campaign_rules or "",
         "max_clips": max_clips,
-        "preferred_height": body.preferred_height if body.preferred_height is not None else 0,
+        "preferred_height": pref_h,
         "cookies": body.cookies or "",
         "burn_captions": body.burn_captions,
         "trim_silence": body.trim_silence,
+        "source_seconds": src_seconds,
         "status": JobStatus.PENDING,
     }
     await _dispatch_pipeline(job_id, job_payload)
@@ -251,7 +288,6 @@ async def upload_job(
 ):
     # Quotas first — fail fast before accepting the body / spawning work.
     check_burst(user["id"], "upload")
-    check_create_job_quota(user["id"])
 
     # Server-side clamp for the multipart path too.
     max_clips = max(1, min(max_clips or 1, settings.quota_max_clips_per_job))
@@ -276,12 +312,26 @@ async def upload_job(
                 )
             f.write(chunk)
 
+    # Cost pre-flight: probe the saved file and reject over-cap sources BEFORE
+    # a Modal worker is spawned. The file is local here, so ffprobe is fast
+    # and reliable — this is the hard enforcement path. The probed duration
+    # also drives the monthly credit charge below.
+    probe_error, src_seconds = probe_and_check(local_path, is_local=True)
+    if probe_error:
+        Path(local_path).unlink(missing_ok=True)  # don't leave junk on the Volume
+        raise HTTPException(422, probe_error)
+
+    # Tier quotas (jobs/day, concurrent, monthly credits) now that we know the
+    # source duration.
+    check_create_job_quota(user["id"], src_seconds)
+
     # Coerce Form strings to real types BEFORE Job()/payload — SQLModel table
     # models don't validate or coerce, so a raw 'true' string would hit the
     # Postgres BOOLEAN column as-is and fail at commit (see _form_bool).
     burn_on = _form_bool(burn_captions)
     trim_on = _form_bool(trim_silence)
-    pref_h = preferred_height if preferred_height is not None else 1080
+    # Cost cap: never render higher than quota_max_render_height (no 4K/8K encodes).
+    pref_h = clamp_render_height(preferred_height)
 
     # Commit the Volume so the spawned pipeline worker can see the file
     # immediately (Modal only flushes volume writes when this container exits).
@@ -303,11 +353,15 @@ async def upload_job(
             preferred_height=pref_h,
             burn_captions=burn_on,
             trim_silence=trim_on,
+            source_seconds=src_seconds,
         )
         session.add(job)
         session.commit()
         session.refresh(job)
         job_id = job.id
+        # Charge credits atomically with job creation (same session/commit).
+        deduct_credits(user["id"], src_seconds, session)
+        session.commit()
 
     # Send a payload so the Modal worker can recreate the job record locally
     # if the Volume hasn't synced yet. This bypasses SQLite staleness on Modal
@@ -323,6 +377,7 @@ async def upload_job(
         "preferred_height": pref_h,
         "burn_captions": burn_on,
         "trim_silence": trim_on,
+        "source_seconds": src_seconds,
         "status": JobStatus.PENDING,
     }
     await _dispatch_pipeline(job_id, job_payload)
@@ -332,6 +387,41 @@ async def upload_job(
         status=JobStatus.PENDING,
         message="Upload received, job dispatched.",
     )
+
+
+# --- Tier + credits ---------------------------------------------------------
+
+@router.get("/tiers")
+def get_my_tier(user: dict = Depends(get_current_user)):
+    """Current tier, monthly credit balance and caps (drives the quota UI)."""
+    return get_usage_summary(user["id"])
+
+
+class TopupRequest(BaseModel):
+    credits: int = Field(ge=1, le=10000)
+
+
+@router.post("/credits/topup")
+def topup_credits(body: TopupRequest, user: dict = Depends(get_current_user)):
+    """Admin-gated credit grant for testing — replaced by Stripe checkout when
+    billing goes live. Credits are added on top of the tier's monthly allowance
+    and are the hook the checkout/webhook will call.
+    """
+    admins = {e.strip() for e in (settings.admin_emails or "").split(",") if e.strip()}
+    if (user.get("email") or "") not in admins:
+        raise HTTPException(
+            403,
+            "Payments aren't wired yet — top-ups are admin-only for now.",
+        )
+    month = datetime.now(UTC).strftime("%Y-%m")
+    with Session(engine) as session:
+        usage = session.get(MonthlyUsage, (user["id"], month))
+        if usage is None:
+            usage = MonthlyUsage(user_id=user["id"], month=month)
+            session.add(usage)
+        usage.topup_credits += body.credits
+        session.commit()
+    return get_usage_summary(user["id"])
 
 
 @router.get("/jobs/{job_id}")

@@ -29,6 +29,7 @@ class Job(SQLModel, table=True):
     preferred_height: int | None = Field(default=720)  # Frame.io proxy height (0 = original)
     burn_captions: bool = Field(default=False)    # Burn animated word-level captions (karaoke, Opus-style)
     trim_silence: bool = Field(default=False)     # Cut inter-word pauses >0.5s (punchier clips)
+    source_seconds: int | None = None             # Probed source duration (credits = minutes)
 
     status: str = Field(default=JobStatus.PENDING)
     progress_percentage: int = Field(default=0)
@@ -82,6 +83,28 @@ class QuotaUsage(SQLModel, table=True):
     action: str = Field(index=True)          # e.g. "job", "generate_more", "trim", "refresh_seo"
     window_start: datetime = Field(index=True)  # minute bucket start
     count: int = Field(default=0)
+
+
+class UserTier(SQLModel, table=True):
+    """Per-user plan tier (free/starter/pro). Row created lazily on first use."""
+    user_id: str = Field(primary_key=True)
+    tier: str = Field(default="free")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class MonthlyUsage(SQLModel, table=True):
+    """Monthly allowance ledger per user: credits (source minutes) used.
+
+    Row per (user_id, 'YYYY-MM'). credits_used counts source minutes of jobs
+    started this month; topup_credits adds purchased minutes on top of the
+    tier's monthly allowance; jobs_used/clips_used track the other caps.
+    """
+    user_id: str = Field(primary_key=True)
+    month: str = Field(primary_key=True)      # 'YYYY-MM'
+    credits_used: int = Field(default=0)
+    jobs_used: int = Field(default=0)
+    clips_used: int = Field(default=0)
+    topup_credits: int = Field(default=0)
 
 
 def clip_vault_cutoff() -> datetime:
