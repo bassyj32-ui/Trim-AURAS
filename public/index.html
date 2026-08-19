@@ -112,7 +112,7 @@
 
     <div class="url-field reveal" style="animation-delay:0.2s;">
       <svg class="icon" width="15" height="15" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
-      <input class="url-input" id="urlInput" type="url" placeholder="YouTube, TikTok, Google Drive / Frame.io link" autocomplete="url" aria-label="Video link">
+      <input class="url-input" id="urlInput" type="url" placeholder="TikTok, Instagram, Google Drive / Frame.io link" autocomplete="url" aria-label="Video link">
     </div>
 
     <div class="divider-or reveal" style="animation-delay:0.22s;">OR</div>
@@ -155,7 +155,7 @@
 
     <!-- Collapsible Style picker (templates hidden behind toggle) -->
     <div class="collapse-toggle reveal" id="tplToggle" style="animation-delay:0.4s;">
-      <span class="section-label" style="margin:0;">Style <span class="hint" id="styleHint">Blur Pad</span></span>
+      <span class="section-label" style="margin:0;">Style <span class="hint" id="styleHint">Auto</span></span>
       <span class="collapse-meta"><span class="tpl-count" id="tplCount">—</span>
         <svg class="icon chevron" width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
       </span>
@@ -705,13 +705,18 @@ async function loadTemplates() {
     </div>`;
     return;
   }
-  styleList.innerHTML = templates.map((t,i) =>
-    `<div class="style-chip${i===0?' active':''}" data-id="${t.id}">
-      <div class="style-swatch" style="background-image:url('${templatePreviews[t.id]||''}');background:${templateGradients[t.id]||'linear-gradient(155deg,#E7B5A0,#C97B57)'}"></div>
-      <div class="style-name">${escHtml(t.name)}</div>
-    </div>`
-  ).join('');
-  styleHint.textContent = templates[0]?.name || 'Blur Pad';
+  styleList.innerHTML =
+    '<div class="style-chip active" data-id="auto">' +
+      '<div class="style-swatch" style="display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#232323,#4a4a4a);color:#fff;font-size:11px;font-weight:800;letter-spacing:1px;">AI</div>' +
+      '<div class="style-name">Auto</div>' +
+    '</div>' +
+    templates.map(t =>
+      `<div class="style-chip" data-id="${t.id}">
+        <div class="style-swatch" style="background-image:url('${templatePreviews[t.id]||''}');background:${templateGradients[t.id]||'linear-gradient(155deg,#E7B5A0,#C97B57)'}"></div>
+        <div class="style-name">${escHtml(t.name)}</div>
+      </div>`
+    ).join('');
+  styleHint.textContent = 'Auto — AI picks the best look';
   const tplCountEl = document.getElementById('tplCount');
   if (tplCountEl) tplCountEl.textContent = templates.length;
   const chips = styleList.querySelectorAll('.style-chip');
@@ -721,7 +726,7 @@ async function loadTemplates() {
       el.classList.add('active');
       el.scrollIntoView({behavior:'smooth', inline:'center', block:'nearest'});
       const name = el.querySelector('.style-name').textContent;
-      styleHint.textContent = name;
+      styleHint.textContent = el.dataset.id === 'auto' ? 'Auto — AI picks the best look' : name;
     });
   });
 }
@@ -739,7 +744,7 @@ function renderResults(jobId) {
         resultsList.innerHTML = `<div class="vault-empty">
           <span class="vault-empty-icon">⚡</span>
           <p class="vault-empty-title">No clips generated</p>
-          <p class="vault-empty-desc">This job finished without producing clips. Try again with a different video or template.</p>
+          <p class="vault-empty-desc">This job finished without producing clips. Try again with a different video or style.</p>
         </div>`;
         resultsCount.textContent = '0 clips';
         return;
@@ -872,11 +877,10 @@ async function loadHistory() {
       historyEl.innerHTML = `<div class="vault-empty">
         <span class="vault-empty-icon">🎬</span>
         <p class="vault-empty-title">Welcome to TrimAURA</p>
-        <p class="vault-empty-desc">Paste a YouTube, TikTok, Google Drive or Frame.io link, upload a video, pick a template, and generate shorts with AI-powered captions and SEO.</p>
+        <p class="vault-empty-desc">Paste a TikTok, Instagram, Google Drive or Frame.io link — or upload a video — and hit Generate shorts. AI picks the style, captions and SEO for you.</p>
         <div class="vault-empty-steps">
           <div class="vault-step"><span class="vault-step-num">1</span> Add your video</div>
-          <div class="vault-step"><span class="vault-step-num">2</span> Pick a template</div>
-          <div class="vault-step"><span class="vault-step-num">3</span> Generate &amp; share</div>
+          <div class="vault-step"><span class="vault-step-num">2</span> Generate &amp; share</div>
         </div>
       </div>`;
       return;
@@ -922,7 +926,7 @@ generateBtn.addEventListener('click', async () => {
   const hasFile = selectedFile !== null;
   const url = urlInput.value.trim();
 
-  if (!hasFile && !url) { showToast('Select a file or enter a video link (YouTube, TikTok, etc.)'); return; }
+  if (!hasFile && !url) { showToast('Select a file or enter a video link (TikTok, Instagram, Google Drive, etc.)'); return; }
   if (url && !/^https?:\/\//i.test(url)) { showToast('Enter a valid link starting with http:// or https://'); return; }
 
   generateBtn.disabled = true;

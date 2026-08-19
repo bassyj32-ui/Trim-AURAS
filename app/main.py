@@ -1,5 +1,5 @@
 import sentry_sdk
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -30,6 +30,32 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+
+# Content-Security-Policy — inline scripts force 'unsafe-inline', but this still
+# blocks most injected payloads and restricts where the page can connect.
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://browser.sentry-cdn.com https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "img-src 'self' data: blob: https:; "
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co "
+    "https://*.ingest.us.sentry.io https://*.modal.run wss://*.modal.run; "
+    "worker-src 'self'; "
+    "object-src 'none'; "
+    "frame-ancestors 'self'; "
+    "base-uri 'self'"
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if (response.headers.get("content-type") or "").startswith("text/html"):
+        response.headers["Content-Security-Policy"] = _CSP
+    return response
 
 
 @app.on_event("startup")

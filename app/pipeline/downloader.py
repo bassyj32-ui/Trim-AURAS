@@ -296,7 +296,7 @@ def _download_frameio(url: str, preferred_height: int = 720) -> str:
     share_id = _extract_share_id(url)
     asset_id = _extract_asset_id(url)
 
-    with httpx.Client(headers=_HEADERS, timeout=60.0, follow_redirects=True) as client:
+    with httpx.Client(headers=_HEADERS, timeout=60.0) as client:
         # Resolve the list of asset ids in the share (unless the URL already
         # points at a specific asset).
         if asset_id:
@@ -349,26 +349,47 @@ def _download_frameio(url: str, preferred_height: int = 720) -> str:
             raise RuntimeError(f"No downloadable link available for '{video['name']}'.")
         print(f"[frameio] source={video['name']} quality={label}")
 
-        # Stream it down into the workspace
+        # Stream it down into the workspace (each redirect hop is SSRF-checked)
         dest = WORKSPACE / (re.sub(r"[^\w.\-]+", "_", video["name"]) or f"{share_id}.mp4")
-        with client.stream("GET", dl_url) as stream:
-            stream.raise_for_status()
-            with open(dest, "wb") as fh:
-                fh.writelines(stream.iter_bytes(chunk_size=1024 * 1024))
+        _stream_download(client, dl_url, dest)
 
     if not dest.exists() or dest.stat().st_size == 0:
         raise RuntimeError(f"Frame.io download produced an empty file: {dest.name}")
     return os.path.abspath(dest)
 
 
+def _stream_download(client: httpx.Client, url: str, dest: Path, timeout: float = 60.0) -> None:
+    """Stream ``url`` to ``dest``, re-checking every redirect hop with the SSRF guard.
+
+    httpx's automatic redirect following would happily chase a 3xx into an
+    internal address (e.g. 169.254.169.254), so redirects are walked one hop
+    at a time and each hop's URL is validated before it is fetched.
+    """
+    current = url
+    for _ in range(10):  # hard cap on redirect hops
+        if err := validate_source_url(current):
+            raise RuntimeError(f"SSRF check failed: {err}")
+        resp = client.get(current, timeout=timeout, follow_redirects=False)
+        if resp.status_code in (301, 302, 303, 307, 308):
+            location = resp.headers.get("location")
+            resp.close()
+            if not location:
+                raise RuntimeError(f"Redirect from {current} with no Location header")
+            current = str(httpx.URL(current).join(location))
+            continue
+        resp.raise_for_status()
+        with open(dest, "wb") as fh:
+            fh.writelines(resp.iter_bytes(chunk_size=1024 * 1024))
+        resp.close()
+        return
+    raise RuntimeError("Too many redirects while downloading")
+
+
 def _download_direct(url: str) -> str:
     """Stream a direct video file URL down to the workspace."""
     dest = WORKSPACE / (Path(url.split("?")[0]).name or "source_video")
-    with httpx.Client(headers=_HEADERS, timeout=60.0, follow_redirects=True) as client:
-        with client.stream("GET", url) as stream:
-            stream.raise_for_status()
-            with open(dest, "wb") as fh:
-                fh.writelines(stream.iter_bytes(chunk_size=1024 * 1024))
+    with httpx.Client(headers=_HEADERS, timeout=60.0) as client:
+        _stream_download(client, url, dest)
     if not dest.exists() or dest.stat().st_size == 0:
         raise RuntimeError(f"Direct download produced an empty file: {dest.name}")
     return os.path.abspath(dest)

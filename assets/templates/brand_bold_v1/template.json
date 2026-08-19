@@ -1,7 +1,7 @@
 {
   "id": "brand_bold_v1",
-  "name": "Brand Bold v1",
-  "description": "Professional #2 'Bold' style — clean white serif text, gold accents, elegant frame. Built for business, finance, and coaching content.",
+  "name": "Bold & Classy",
+  "description": "Serif text, gold accents and an elegant frame. Built for business, finance, and coaching content.",
   "genres": ["business", "finance", "marketing", "entrepreneur", "startup", "money", "investing", "stock", "crypto", "real estate", "sales", "brand", "career", "side hustle", "passive income", "wealth", "founder", "ceo", "strategy", "sales"],
   "canvas": { "width": 1080, "height": 1920, "fps": 30 },
   "video_slot": {
