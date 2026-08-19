@@ -28,6 +28,7 @@ import app.quotas as quotas_module
 
 from app.main import app
 from app.models import Job, JobStatus, VideoClip
+import app.main as main_module
 
 
 @pytest.fixture(scope="session")
@@ -57,7 +58,7 @@ def session(test_engine):
 
 @pytest.fixture(scope="function", autouse=True)
 def patch_engine(test_engine, monkeypatch):
-    for mod in (db_module, orch_module, tr_module, int_module, ve_module, seo_module, ft_module, storage_module, push_module, quotas_module):
+    for mod in (db_module, orch_module, tr_module, int_module, ve_module, seo_module, ft_module, storage_module, push_module, quotas_module, main_module):
         if hasattr(mod, "engine"):
             monkeypatch.setattr(mod, "engine", test_engine)
     # Also patch the routes module which imports engine directly

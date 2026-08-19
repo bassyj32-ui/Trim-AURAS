@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     vapid_private_key: str = ""
     vapid_subject: str = "mailto:trimaura@solo.app"
 
+    # Public share links — HMAC signing key for /clip/{id}?t= tokens. The
+    # token is stateless (derived from clip_id + this secret), so a shared
+    # clip is unguessable-but-public (like YouTube "unlisted"): anyone with
+    # the link can watch/download, nobody else can guess it. Rotate this
+    # secret to revoke ALL share links at once. Leave empty ONLY in dev
+    # (app/share.py falls back to an insecure constant so tests/dev work).
+    share_secret: str = ""
+
     # App
     database_url: str = "postgresql://postgres:@localhost:5432/postgres"
     app_env: str = "development"

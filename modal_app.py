@@ -202,6 +202,7 @@ def _reset_to_retrying(job_id: int | None, exc: BaseException):
         modal.Secret.from_name("trimaura-secrets-v2"),
         modal.Secret.from_name("trimaura-supabase-keys"),
         modal.Secret.from_name("trimaura-db-url"),
+        modal.Secret.from_name("trimaura-share-secret"),
     ],
     scaledown_window=120,
 )

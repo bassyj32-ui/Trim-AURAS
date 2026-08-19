@@ -1,5 +1,6 @@
 import asyncio
 import json
+import subprocess
 import uuid
 from collections import Counter
 from datetime import UTC, datetime
@@ -40,6 +41,7 @@ from app.quotas import (
     get_usage_summary,
 )
 from app.ssrf import validate_source_url
+from app.share import make_share_token, verify_share_token
 from app.storage import generate_presigned_url
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -679,6 +681,7 @@ def get_job(job_id: int, user: dict = Depends(get_current_user)):
                 "hashtags": c.hashtags,
                 "viral_score": c.viral_score,
                 "posted_platforms": _clip_posted(c),
+                "share_token": make_share_token(c.id),
                 "created_at": c.created_at.isoformat(),
             }
             for c in job.clips
@@ -902,6 +905,7 @@ def list_clips(user: dict = Depends(get_current_user)):
                 "hashtags": c.hashtags,
                 "viral_score": c.viral_score,
                 "posted_platforms": _clip_posted(c),
+                "share_token": make_share_token(c.id),
                 "created_at": c.created_at.isoformat(),
             }
             for c in clips
@@ -1031,6 +1035,147 @@ async def download_clip(clip_id: int, user: dict = Depends(get_current_user)):
 
     # Last resort: the raw stored URL (local path or R2 public)
     return {"download_url": clip.r2_url}
+
+
+# --- Public Share Endpoints (no auth — gated by unguessable HMAC token) ---
+# These power the share page (/clip/{id}?t=...) and its OG cards. The token
+# in the URL is the capability: anyone with the link can watch/download,
+# nobody else can guess it (YouTube-"unlisted" model). Invalid/missing
+# tokens return 404 so no existence information leaks.
+
+POSTERS_DIR = Path("/mnt/data/posters") if MODAL else Path("tmp") / "posters"
+
+
+def _public_clip(session, clip_id: int, token: str) -> VideoClip:
+    """Fetch a non-deleted clip whose share token is valid (404 otherwise)."""
+    if not verify_share_token(clip_id, token):
+        raise HTTPException(404, "Clip not found")
+    clip = session.get(VideoClip, clip_id)
+    if not clip or clip.deleted:
+        raise HTTPException(404, "Clip not found")
+    return clip
+
+
+def _clip_media_path(clip: VideoClip) -> Path:
+    """Predictable local path where a clip's rendered MP4 lives (servable
+    from the web container's Volume mount; also used for poster extraction)."""
+    return Path(f"/mnt/data/clips/{clip.job_id}_{clip.id}.mp4")
+
+
+def _serve_clip_file(clip: VideoClip):
+    """Stream a clip's MP4 (Volume path, presigned R2, or raw URL fallback)."""
+    if MODAL:
+        vol_path = _clip_media_path(clip)
+        try:
+            import modal as _modal
+            _modal.Volume.from_name("trimaura-data").reload()
+        except Exception:
+            pass
+        if vol_path.exists():
+            return FileResponse(
+                vol_path,
+                media_type="video/mp4",
+                filename=f"trimaura_clip_{clip.id}.mp4",
+            )
+
+    # Fallback: presigned R2 URL or direct public URL
+    if clip.r2_key:
+        url = generate_presigned_url(clip.r2_key)
+        if url:
+            return {"download_url": url}
+
+    return {"download_url": clip.r2_url}
+
+
+def _ensure_poster(clip: VideoClip) -> Path | None:
+    """Return a poster JPG for a clip, extracting it on first use.
+
+    Extracts a single frame ~1s in with ffmpeg (already in the container
+    image) and caches it under POSTERS_DIR so OG crawlers don't pay the
+    extraction cost on every fetch. Returns None if the clip file is gone.
+    """
+    POSTERS_DIR.mkdir(parents=True, exist_ok=True)
+    poster_path = POSTERS_DIR / f"{clip.id}.jpg"
+    if poster_path.exists():
+        return poster_path
+
+    vol_path = _clip_media_path(clip)
+    if MODAL:
+        try:
+            import modal as _modal
+            _modal.Volume.from_name("trimaura-data").reload()
+        except Exception:
+            pass
+        if not vol_path.exists():
+            return None
+    elif not vol_path.exists() and Path(clip.r2_url or "").exists():
+        vol_path = Path(clip.r2_url)
+
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y", "-v", "error",
+                "-ss", "1", "-i", str(vol_path),
+                "-frames:v", "1", "-q:v", "3", str(poster_path),
+            ],
+            capture_output=True,
+            timeout=120,
+        )
+        if result.returncode != 0 or not poster_path.exists():
+            return None
+        if MODAL:
+            try:
+                import modal as _modal
+                _modal.Volume.from_name("trimaura-data").commit()
+            except Exception:
+                pass
+        return poster_path
+    except Exception:
+        return None
+
+
+@router.get("/public/clips/{clip_id}")
+def public_clip_meta(clip_id: int, t: str = ""):
+    """Public metadata for the share page + OG tags. Minimal fields only —
+    deliberately omits r2_url/r2_key (internal storage paths)."""
+    with Session(engine) as session:
+        clip = _public_clip(session, clip_id, t)
+        return {
+            "clip_id": clip.id,
+            "job_id": clip.job_id,
+            "duration": clip.duration,
+            "start_time": clip.start_time,
+            "end_time": clip.end_time,
+            "titles": {
+                "curiosity": clip.title_curiosity,
+                "direct": clip.title_direct,
+                "question": clip.title_question,
+            },
+            "description": clip.description,
+            "hashtags": clip.hashtags,
+            "viral_score": clip.viral_score,
+            "stream_url": f"/api/public/clips/{clip.id}/download?t={t}",
+            "poster_url": f"/api/public/clips/{clip.id}/poster?t={t}",
+        }
+
+
+@router.get("/public/clips/{clip_id}/download")
+def public_clip_download(clip_id: int, t: str = ""):
+    """Stream a shared clip to anyone holding the token (no login)."""
+    with Session(engine) as session:
+        clip = _public_clip(session, clip_id, t)
+    return _serve_clip_file(clip)
+
+
+@router.get("/public/clips/{clip_id}/poster")
+def public_clip_poster(clip_id: int, t: str = ""):
+    """Poster JPG for OG cards (extracted + cached on first request)."""
+    with Session(engine) as session:
+        clip = _public_clip(session, clip_id, t)
+    poster = _ensure_poster(clip)
+    if poster is None:
+        raise HTTPException(404, "Poster not found")
+    return FileResponse(poster, media_type="image/jpeg")
 
 
 # --- Push Notifications ---
