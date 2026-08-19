@@ -1159,9 +1159,13 @@ def public_clip_meta(clip_id: int, t: str = ""):
         }
 
 
-@router.get("/public/clips/{clip_id}/download")
+@router.api_route("/public/clips/{clip_id}/download", methods=["GET", "HEAD"])
 def public_clip_download(clip_id: int, t: str = ""):
-    """Stream a shared clip to anyone holding the token (no login)."""
+    """Stream a shared clip to anyone holding the token (no login).
+
+    HEAD is supported so link-preview crawlers (which often probe with HEAD
+    before GET) get a real response instead of a bogus 404.
+    """
     with Session(engine) as session:
         clip = _public_clip(session, clip_id, t)
     return _serve_clip_file(clip)

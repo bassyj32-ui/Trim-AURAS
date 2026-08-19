@@ -74,6 +74,12 @@ class TestPublicClipEndpoints:
         assert res.status_code == 404
 
     @pytest.mark.asyncio
+    async def test_public_download_head_supported(self, client: AsyncClient, sample_clip):
+        token = make_share_token(sample_clip.id)
+        res = await client.head(f"/api/public/clips/{sample_clip.id}/download?t={token}")
+        assert res.status_code == 200
+
+    @pytest.mark.asyncio
     async def test_public_poster_wrong_token(self, client: AsyncClient, sample_clip):
         res = await client.get(f"/api/public/clips/{sample_clip.id}/poster?t=bad")
         assert res.status_code == 404
