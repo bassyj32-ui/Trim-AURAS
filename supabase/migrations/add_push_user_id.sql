@@ -17,6 +17,13 @@ ALTER TABLE public.pushsubscription
 -- orphan never receives (or retains) push state.
 DELETE FROM public.pushsubscription WHERE user_id = '';
 
+-- Drop any pre-existing policies first so this migration is safe to re-run
+-- (CREATE POLICY has no IF NOT EXISTS).
+DROP POLICY IF EXISTS sub_select_own ON public.pushsubscription;
+DROP POLICY IF EXISTS sub_insert_own ON public.pushsubscription;
+DROP POLICY IF EXISTS sub_update_own ON public.pushsubscription;
+DROP POLICY IF EXISTS sub_delete_own ON public.pushsubscription;
+
 -- Per-user policies (deny-all for anything else, matching job/videoclip).
 CREATE POLICY sub_select_own ON public.pushsubscription
   FOR SELECT USING (user_id = auth.uid()::text);
