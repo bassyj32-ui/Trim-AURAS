@@ -823,4 +823,17 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
 }
 .google-btn:hover{border-color:var(--gold);box-shadow:0 6px 18px rgba(28,25,23,0.08);transform:translateY(-1px);}
 .google-logo{display:flex;}
+.auth-or{display:flex;align-items:center;gap:10px;width:100%;max-width:300px;color:var(--ink-dim);font-size:10px;font-family:var(--mono);}
+.auth-or::before,.auth-or::after{content:"";flex:1;height:1px;background:var(--hairline);}
+.auth-email{width:100%;max-width:300px;display:flex;flex-direction:column;gap:8px;}
+.auth-email input{
+  width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--hairline);background:var(--paper);
+  color:var(--ink);font-size:13.5px;font-family:var(--font);outline:none;transition:border-color 0.18s;
+}
+.auth-email input:focus{border-color:var(--gold);}
+.magic-btn{
+  width:100%;padding:12px;border-radius:12px;border:1px solid var(--hairline);background:var(--paper);
+  color:var(--ink);font-size:13px;font-weight:700;font-family:var(--font);cursor:pointer;transition:all 0.18s;
+}
+.magic-btn:hover{border-color:var(--gold);color:var(--gold);}
 .auth-foot{font-size:10px;color:var(--ink-dim);font-family:var(--mono);max-width:280px;}

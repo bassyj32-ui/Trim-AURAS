@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # ADMIN_EMAILS gates /api/admin/* + POST /api/credits/topup (manual grants).
     approved_emails: str = "vitamerina@gmail.com,bassyjmin@gmail.com"
     admin_emails: str = "vitamerina@gmail.com,bassyjmin@gmail.com"
+    # Per-IP requests/minute cap on /api/* (DB-backed; stops hammering/scraping).
+    ip_rate_per_minute: int = 240
 
     # CORS — explicit origins only (auth uses Bearer tokens, not cookies, so
     # allow_credentials stays False and wildcard origins are never allowed).

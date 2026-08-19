@@ -14,6 +14,7 @@ from app.config import settings
 from app.database import engine, init_db
 from app.models import VideoClip
 from app.observability import bootstrap
+from app.ratelimit import check_ip_rate
 from app.recovery import start_recovery
 from app.share import verify_share_token
 
@@ -53,6 +54,23 @@ _CSP = (
     "frame-ancestors 'self'; "
     "base-uri 'self'"
 )
+
+
+@app.middleware("http")
+async def ip_rate_limit(request: Request, call_next):
+    """DB-backed per-IP cap on /api/* (stops scraping/hammering)."""
+    if request.url.path.startswith("/api/"):
+        try:
+            check_ip_rate(request)
+        except HTTPException as exc:
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+                headers=exc.headers,
+            )
+    return await call_next(request)
 
 
 @app.middleware("http")

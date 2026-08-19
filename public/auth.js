@@ -245,6 +245,15 @@
       });
     }
     if (googleBtn) googleBtn.addEventListener('click', signInWithGoogle);
+    var magicForm = document.getElementById('magicLinkForm');
+    if (magicForm) {
+      magicForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var input = document.getElementById('magicLinkEmail');
+        if (!input || !input.value || !input.checkValidity()) return;
+        signInWithMagicLink(input.value.trim());
+      });
+    }
   }
 
   // --- Actions -----------------------------------------------------------
@@ -255,6 +264,22 @@
     client.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: redirectTo },
+    });
+  }
+
+  function signInWithMagicLink(email) {
+    if (!client) return;
+    var redirectTo = window.location.origin + window.location.pathname;
+    client.auth.signInWithOtp({
+      email: email,
+      options: { emailRedirectTo: redirectTo },
+    }).then(function (res) {
+      if (res.error) {
+        toast(res.error.message || 'Could not send the sign-in link.');
+        return;
+      }
+      closeAuth();
+      toast('Sign-in link sent — check ' + email);
     });
   }
 
