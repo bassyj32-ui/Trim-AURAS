@@ -64,12 +64,13 @@ def dodo_client():
 
 # --- Checkout --------------------------------------------------------------
 
-def create_checkout_session(user_id: str, kind: str, pack: str | None = None,
+def create_checkout_session(user: dict, kind: str, pack: str | None = None,
                             plan: str | None = None) -> dict:
     """Create a Dodo hosted checkout for a top-up pack or a subscription.
 
     Returns {"checkout_url", "session_id"} for the frontend to redirect to.
     """
+    user_id = user["id"]
     if kind == "topup":
         cfg = _TOPUP_PACKS.get(pack or "")
         if cfg is None:
@@ -90,6 +91,19 @@ def create_checkout_session(user_id: str, kind: str, pack: str | None = None,
     else:
         raise HTTPException(400, "kind must be 'topup' or 'subscription'.")
 
+    # Prefill everything we already know so Dodo's page asks as little as
+    # possible: email/name/phone from the logged-in user, billing country
+    # defaulted to US (avoids the wrong-country phone default + card declines),
+    # and USD forced so adaptive conversion can't switch the charge to ETB.
+    meta = user.get("metadata") or {}
+    customer = {"email": user.get("email") or ""}
+    name = meta.get("full_name") or meta.get("name") or ""
+    phone = meta.get("phone") or meta.get("phone_number") or ""
+    if name:
+        customer["name"] = name
+    if phone and phone.startswith("+"):  # Dodo expects E.164; skip junk metadata
+        customer["phone_number"] = phone
+
     checkout = dodo_client().checkout_sessions.create(
         product_cart=[{"product_id": product_id, "quantity": 1}],
         metadata={
@@ -99,6 +113,10 @@ def create_checkout_session(user_id: str, kind: str, pack: str | None = None,
             "plan": plan or "",
             "credits": credits,
         },
+        customer=customer,
+        billing_address={"country": "US"},
+        billing_currency="USD",
+        minimal_address=True,
         return_url=settings.checkout_return_url or None,
         cancel_url=settings.checkout_return_url or None,
     )

@@ -615,7 +615,7 @@ def create_checkout(body: CheckoutRequest, user: dict = Depends(get_current_user
     idempotent — a paid session can never double-grant credits.
     """
     return create_checkout_session(
-        user["id"],
+        user,
         kind=body.kind,
         pack=body.pack,
         plan=body.plan,
