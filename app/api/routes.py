@@ -19,6 +19,7 @@ from app.models import (
     Job,
     JobStatus,
     PushSubscription,
+    UserTier,
     VideoClip,
     clip_vault_cutoff,
 )

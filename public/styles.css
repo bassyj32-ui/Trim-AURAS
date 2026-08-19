@@ -16,6 +16,10 @@
   --green:#3A9D5E;
   --green-bg:rgba(58,157,94,0.1);
   --red:#E55B5B;
+  --ok:#3A9D5E;          /* single success green (was --accent-ok / #2e9e5b) */
+  --warn:#D99A2B;        /* single warning amber (was --accent-warn / #d99a2b) */
+  --bg-soft:var(--bg-soft);     /* soft cream fills (was hardcoded var(--bg-soft)) */
+  --bg-warm:var(--bg-warm);     /* warm highlight fills (was hardcoded var(--bg-warm)) */
   --radius:18px;
   --radius-sm:12px;
   --radius-pill:30px;
@@ -110,10 +114,10 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
   display:flex;align-items:center;justify-content:center;
   transition:all 0.2s;
 }
-.upload-clear:hover{background:#F2EEE6;color:var(--ink);border-color:var(--ink-dim);}
+.upload-clear:hover{background:var(--bg-soft);color:var(--ink);border-color:var(--ink-dim);}
 .upload-icon{
   width:40px;height:40px;border-radius:50%;margin:0 auto 10px;
-  background:#F2EEE6;display:flex;align-items:center;justify-content:center;color:var(--ink);
+  background:var(--bg-soft);display:flex;align-items:center;justify-content:center;color:var(--ink);
 }
 .upload-filename{font-family:var(--mono);font-size:12.5px;font-weight:600;color:var(--ink);word-break:break-all;max-width:300px;margin:0 auto;}
 .upload-check{
@@ -147,19 +151,12 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
 .cta{
   flex:1;padding:16px;border-radius:var(--radius-pill);border:none;
   background:var(--ink);color:#fff;
-  font-size:14px;font-weight:700;font-family:var(--font);position:relative;overflow:hidden;
+  font-size:14px;font-weight:700;font-family:var(--font);
   cursor:pointer;transition:transform 0.12s ease,opacity 0.2s ease;
   touch-action:manipulation;-webkit-tap-highlight-color:transparent;
 }
-.cta::after{
-  content:'';position:absolute;top:0;left:-40%;width:30%;height:100%;
-  background:linear-gradient(115deg,rgba(255,255,255,0) 0%,rgba(255,255,255,0.18) 50%,rgba(255,255,255,0) 100%);
-  animation:shine 3.5s ease-in-out infinite;
-}
-@keyframes shine{0%{left:-40%;}35%{left:130%;}100%{left:130%;}}
 .cta:active{transform:scale(0.97);}
 .cta:disabled{opacity:0.4;cursor:not-allowed;}
-.cta:disabled::after{display:none;}
 
 .icon-btn{
   width:52px;border-radius:var(--radius-pill);background:var(--card);border:1px solid var(--hairline);
@@ -186,12 +183,9 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
 .progress-track.active{display:block;}
 .progress-fill{
   height:100%;width:0;border-radius:10px;
-  background:linear-gradient(90deg,var(--gold),var(--gold-deep),var(--gold));
-  background-size:200% 100%;
-  animation:shimmer 2s ease-in-out infinite;
+  background:linear-gradient(90deg,var(--gold),var(--gold-deep));
   transition:width 0.5s ease;
 }
-@keyframes shimmer{0%{background-position:0% 50%;}50%{background-position:100% 50%;}100%{background-position:0% 50%;}}
 .progress-row{
   display:none;justify-content:space-between;font-size:10px;color:var(--ink-dim);font-weight:600;
 }
@@ -221,7 +215,7 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
 
 .result-thumb{
   width:46px;height:62px;border-radius:10px;background-size:cover;background-position:center;
-  flex-shrink:0;position:relative;
+  flex-shrink:0;position:relative;overflow:hidden;
 }
 .result-thumb::after{content:'';position:absolute;inset:0;border-radius:10px;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.06);}
 .result-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;opacity:0.85;}
@@ -252,6 +246,7 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
 .vault-thumb{
   width:42px;height:42px;border-radius:12px;flex-shrink:0;
   display:flex;align-items:center;justify-content:center;
+  position:relative;overflow:hidden;
 }
 
 .vault-body{flex:1;min-width:0;}
@@ -263,7 +258,7 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
   flex-shrink:0;
   font-family:var(--mono);font-size:9px;letter-spacing:0.5px;
   padding:5px 10px 5px 16px;border-radius:20px;position:relative;
-  background:#F2EEE6;color:var(--ink-dim);
+  background:var(--bg-soft);color:var(--ink-dim);
 }
 .vault-status::before{
   content:'';position:absolute;left:6px;top:50%;transform:translateY(-50%);
@@ -277,7 +272,7 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
 
 /* --- Vault Empty State --- */
 .vault-empty{text-align:center;padding:32px 16px;color:var(--ink-dim);}
-.vault-empty-icon{font-size:38px;display:block;margin-bottom:12px;opacity:0.6;}
+.vault-empty-icon{display:block;margin-bottom:12px;opacity:0.6;color:var(--gold-deep);}
 .vault-empty-title{font-size:16px;font-weight:700;color:var(--ink);margin-bottom:4px;}
 .vault-empty-desc{font-size:12px;line-height:1.5;max-width:280px;margin:0 auto 16px;}
 .vault-empty-steps{display:flex;justify-content:center;gap:10px;}
@@ -286,7 +281,7 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
   font-size:10px;font-weight:600;color:var(--ink-dim);
 }
 .vault-step-num{
-  width:24px;height:24px;border-radius:50%;background:#F2EEE6;
+  width:24px;height:24px;border-radius:50%;background:var(--bg-soft);
   display:flex;align-items:center;justify-content:center;
   font-size:11px;font-weight:700;color:var(--ink);
 }
@@ -345,7 +340,7 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
 .clip-nav::-webkit-scrollbar{display:none}
 .clip-dot{
   width:30px;height:30px;border-radius:8px;
-  background:#F2EEE6;border:1.5px solid var(--hairline);
+  background:var(--bg-soft);border:1.5px solid var(--hairline);
   font-size:11px;font-weight:600;color:var(--ink-dim);
   cursor:pointer;flex-shrink:0;display:flex;
   align-items:center;justify-content:center;
@@ -674,18 +669,18 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
     display:grid;grid-template-columns:minmax(360px,420px) 1fr;gap:28px;align-items:start;
   }
   .panel{background:var(--card);border:1px solid var(--hairline);border-radius:20px;padding:24px;}
-  .panel-studio{position:sticky;top:128px;border-color:#CFC5B4;box-shadow:0 6px 24px rgba(0,0,0,0.06);}
+  .panel-studio{position:sticky;top:128px;border-color:var(--hairline);box-shadow:0 6px 24px rgba(0,0,0,0.06);}
   .panel-content{position:static;background:rgba(251,249,246,0.7);}
   .profile{display:none;}
 
   /* Studio input row — high visibility */
-  .url-field{background:#fff;border:1.5px solid #B9AE9C;box-shadow:0 2px 10px rgba(0,0,0,0.05);}
+  .url-field{background:var(--card);border:1.5px solid var(--hairline);box-shadow:0 2px 10px rgba(0,0,0,0.05);}
   .url-field:focus-within{border-color:var(--gold-deep);box-shadow:0 0 0 3px rgba(201,160,86,0.18);}
   .url-field svg{color:var(--gold-deep);}
   .url-input{font-size:13.5px;}
-  .url-input::placeholder{color:#9A9284;font-weight:500;}
-  .upload-card{background:#fff;border:2px dashed var(--gold-deep);box-shadow:0 2px 10px rgba(0,0,0,0.05);}
-  .upload-card:hover{border-color:var(--gold);background:#FFFDF8;box-shadow:0 4px 16px rgba(201,160,86,0.15);}
+  .url-input::placeholder{color:var(--ink-dim);font-weight:500;}
+  .upload-card{background:var(--card);border:2px dashed var(--gold-deep);box-shadow:0 2px 10px rgba(0,0,0,0.05);}
+  .upload-card:hover{border-color:var(--gold);background:var(--bg-warm);box-shadow:0 4px 16px rgba(201,160,86,0.15);}
   .upload-icon{background:rgba(201,160,86,0.14);border:1px solid rgba(201,160,86,0.4);color:var(--gold-deep);}
   .upload-btn{background:var(--ink);}
   .upload-card:hover .upload-btn{background:var(--gold-deep);}
@@ -784,7 +779,7 @@ svg.icon{display:block;stroke:currentColor;fill:none;stroke-width:1.7;stroke-lin
     display:flex;flex-direction:column;gap:12px;transition:all 0.18s;position:relative;
   }
   .plan-card:hover{border-color:var(--gold);}
-  .plan-card.hot{border-color:var(--gold);box-shadow:0 8px 24px rgba(201,160,86,0.18);background:#FFFDF8;}
+  .plan-card.hot{border-color:var(--gold);box-shadow:0 8px 24px rgba(201,160,86,0.18);background:var(--bg-warm);}
   .plan-pop{
     position:absolute;top:-10px;left:50%;transform:translateX(-50%);
     background:var(--gold-deep);color:#fff;font-size:9px;font-weight:700;letter-spacing:0.6px;
