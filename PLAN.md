@@ -510,3 +510,35 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 python dev_server.py
 ```
 
+***
+
+## 🔄 What's Left — Dodo Payments & SaaS Flip (2026-08-19)
+
+### ✅ Status snapshot (verified live)
+- **Dodo Payments integrated** — hosted checkout replaces Stripe (Stripe doesn't work in Ethiopia; payouts arrive in USDT). Test mode is live end-to-end.
+- **Payment flow proven** — real test purchase: `payment` id=13 `succeeded` → 250 permanent credits granted → wallet balance 310 (60 free + 250 bought). Idempotent webhooks (`session_id` UNIQUE) so retries can't double-grant.
+- **Permanent credits wallet shipped** (commit `7dfb314`) — `usertier.permanent_credits`; bought minutes never expire. Top-up card says "Yours forever."
+- **Checkout stripped to minimum** — no discount code, no phone, no tax ID, currency locked to USD, contact pre-filled from auth, `redirect_immediately`. Zipcode stays (card-network AVS requirement — cannot remove).
+- **Schema bug fixed** (`supabase/migrations/fix_credit_tables.sql`, commit `0294381`, applied) — app reads `usertier`/`monthlyusage` (SQLModel lowercase names); hand-written migrations had created unused `user_tiers`/`monthly_usage` duplicates. Dropped the unused tables, backfilled `permanent_credits` from legacy `topup_credits`.
+- **Deployed to Modal** — `https://bassyj32--trimaura-fastapi-app.modal.run`.
+
+### 🔐 Only boss can do — Dodo live flip (dashboard, no code)
+1. Finish Dodo onboarding/KYC for USDT payouts.
+2. Create the 4 **live** products: Starter $4.99/mo, Pro $9.99/mo, Topup-250 $4.99, Topup-500 $9.99 → copy `pdt_live_*` IDs.
+3. Get live API key + live webhook secret from Dodo dashboard.
+4. Register webhook URL: `https://bassyj32--trimaura-fastapi-app.modal.run/api/webhooks/dodo`.
+5. Set `.env`: `DODO_TEST_MODE=false` + live keys + live product IDs. Run `_update_secrets.py`, redeploy (`python -X utf8 -m modal deploy modal_app.py`).
+6. **Before launch**: buy Starter once with a real card + refund it to verify the full real-money loop.
+
+### 📄 SaaS non-negotiables
+- **Privacy Policy + Terms of Service pages** — Dodo requires them on checkout/business before live.
+- **Confirm free-tier limits** for new signups (currently 60 min/mo free; decide if that stays).
+
+### 🎯 Internal clip-farming gaps (optional, decide ROI)
+- **Batch queue** — currently one URL at a time; want N URLs processed overnight.
+- **Auto-posting / scheduler** — push finished clips to TikTok / YouTube / Reels on a schedule.
+- **Performance loop** — track views per clip → know which hook won → regenerate variants of winners.
+- **Internal mode** — hide billing + give the owner account unlimited/high limits (bypasses the 60-min free cap for your own farming).
+
+> **Note:** all internal features above are built for the boss first, then rolled out to paying SaaS users later (e.g. batch queue → paid plan perk, scheduler → Pro tier).
+

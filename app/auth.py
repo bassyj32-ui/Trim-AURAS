@@ -62,6 +62,21 @@ def get_current_user(authorization: str | None = Header(default=None)) -> dict:
             "Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Abuse gate — allowlist by email. When APPROVED_EMAILS is non-empty,
+    # anyone else can sign up but gets 403 on every API call (no compute
+    # burned). Empty list = open access (dev / before gating).
+    approved = {
+        e.strip().lower()
+        for e in (settings.approved_emails or "").split(",")
+        if e.strip()
+    }
+    if approved and (user.email or "").lower() not in approved:
+        raise HTTPException(
+            403,
+            "Access by invite only — your account hasn't been approved yet.",
+        )
+
     return {
         "id": str(user.id),
         "email": user.email,

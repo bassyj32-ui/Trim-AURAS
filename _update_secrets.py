@@ -36,6 +36,8 @@ result = subprocess.run(
         f"DODO_PRODUCT_TOPUP_250={settings.dodo_product_topup_250}",
         f"DODO_PRODUCT_TOPUP_500={settings.dodo_product_topup_500}",
         f"CHECKOUT_RETURN_URL={settings.checkout_return_url}",
+        f"APPROVED_EMAILS={settings.approved_emails}",
+        f"ADMIN_EMAILS={settings.admin_emails}",
         "APP_ENV=production",
     ],
     capture_output=True,

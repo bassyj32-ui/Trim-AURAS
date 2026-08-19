@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     app_env: str = "development"
     port: int = 8000
 
+    # Abuse control — Google OAuth is open signup by default, so any Google
+    # account can burn Modal compute. APPROVED_EMAILS is a comma-separated
+    # allowlist: when non-empty, ONLY those emails can use the API (403 for
+    # everyone else — signup stays open but is inert). Empty = open (dev).
+    # ADMIN_EMAILS gates POST /api/credits/topup (manual credit grants).
+    approved_emails: str = ""
+    admin_emails: str = ""
+
     # CORS — explicit origins only (auth uses Bearer tokens, not cookies, so
     # allow_credentials stays False and wildcard origins are never allowed).
     cors_origins: str = (

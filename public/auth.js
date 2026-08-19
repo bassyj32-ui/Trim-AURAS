@@ -84,6 +84,33 @@
     openAuth('Session expired — please sign in again');
   }
 
+  // Abuse gate: unapproved users get 403 with "invite only" in the message.
+  // Clear the session so they aren't stuck in a broken signed-in state.
+  // Other 403s (e.g. admin-only endpoints) just show the message.
+  function signOutDenied() {
+    window.__authToken = null;
+    session = null;
+    renderAuth();
+    if (client) { try { client.auth.signOut(); } catch (e) {} }
+  }
+
+  function handleDenied403(res) {
+    if (res.status !== 403 || !window.__authToken) return;
+    function denied(msg) {
+      if (msg && /invite only/i.test(msg)) {
+        signOutDenied();
+        toast(msg);
+      } else if (msg) {
+        toast(msg);
+      }
+    }
+    try {
+      res.clone().json().then(function (d) {
+        denied(d && d.detail);
+      }).catch(function () { denied(null); });
+    } catch (e) { denied(null); }
+  }
+
   function patchFetch() {
     var origFetch = window.fetch;
     window.fetch = function (input, init) {
@@ -119,6 +146,7 @@
             return res;
           });
         }
+        handleDenied403(res);
         return res;
       });
     };
@@ -147,6 +175,14 @@
         var xhr = this;
         this.addEventListener('load', function () {
           if (xhr.status === 401 && window.__authToken) auth401();
+          if (xhr.status === 403 && window.__authToken) {
+            var msg = null;
+            try { msg = JSON.parse(xhr.responseText).detail; } catch (e) {}
+            if (msg && /invite only/i.test(msg)) {
+              signOutDenied();
+              toast(msg);
+            }
+          }
         });
       }
       return origSend.apply(this, arguments);
