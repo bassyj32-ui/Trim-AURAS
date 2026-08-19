@@ -5,7 +5,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -106,6 +106,11 @@ class CreateJobResponse(BaseModel):
 
 class GenerateMoreRequest(BaseModel):
     count: int = 3
+
+
+class UploadInitRequest(BaseModel):
+    filename: str
+    size: int  # declared total bytes — validated against quota_max_upload_mb
 
 
 class TogglePostedRequest(BaseModel):
@@ -293,9 +298,8 @@ async def upload_job(
     max_clips = max(1, min(max_clips or 1, settings.quota_max_clips_per_job))
 
     suffix = Path(file.filename).suffix if file.filename else ".mp4"
-    upload_dir = Path("/mnt/data/uploads")
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    local_path = str(upload_dir / f"{uuid.uuid4()}{suffix}")
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    local_path = str(UPLOAD_DIR / f"{uuid.uuid4()}{suffix}")
 
     # Hard size cap so a client can't dump a multi-GB file into the Volume.
     max_bytes = settings.quota_max_upload_mb * 1024 * 1024
@@ -312,6 +316,73 @@ async def upload_job(
                 )
             f.write(chunk)
 
+    # Shared tail: probe, quotas, job creation, credits, dispatch.
+    return await _finish_upload_job(
+        user=user,
+        local_path=local_path,
+        filename=file.filename,
+        template_id=template_id,
+        campaign_rules=campaign_rules,
+        max_clips=max_clips,
+        preferred_height=preferred_height,
+        burn_captions=burn_captions,
+        trim_silence=trim_silence,
+    )
+
+
+# --- Chunked upload (large files) ------------------------------------------
+# Modal's gateway chokes on big multipart bodies (150s/request, ~45MB practical
+# ceiling). Instead the browser slices the file into ~20MB pieces, POSTs each
+# piece as a tiny raw-body request that breezes under the gateway limits, and
+# the server appends it to the job's source file on the Volume. The pipeline
+# worker then reads that file exactly as it does for a single-shot upload.
+# Sessions are tracked by a small `<upload_id>.meta.json` next to the file, so
+# a 409 with `next_index` lets a client resume after a lost ack/retry.
+UPLOAD_DIR = Path("/mnt/data/uploads")
+_UPLOAD_CHUNK_BYTES = 20 * 1024 * 1024  # 20MB per request — safe for Modal's gateway
+
+
+def _volume_reload():
+    """See another container's Volume commits (best-effort, non-fatal)."""
+    if MODAL:
+        try:
+            import modal as _modal
+            _modal.Volume.from_name("trimaura-data").reload()
+        except Exception as e:
+            print(f"[upload] volume reload failed (non-fatal): {e}")
+
+
+def _volume_commit():
+    """Flush our Volume writes so the worker/other containers can see them."""
+    if MODAL:
+        try:
+            import modal as _modal
+            _modal.Volume.from_name("trimaura-data").commit()
+        except Exception as e:
+            print(f"[upload] volume commit failed (non-fatal): {e}")
+
+
+async def _finish_upload_job(
+    user: dict,
+    local_path: str,
+    filename: str | None,
+    template_id: str,
+    campaign_rules: str | None,
+    max_clips: int,
+    preferred_height: int | None,
+    burn_captions: str | None,
+    trim_silence: str | None,
+    meta_path: Path | None = None,
+    meta: dict | None = None,
+) -> CreateJobResponse:
+    """Shared upload tail: probe the saved file, enforce tier quotas, create the
+    Job, charge credits atomically, and dispatch the pipeline.
+
+    Both the single-shot multipart path and the chunked path land here. When
+    ``meta`` is given (chunked), a successful run marks the session finalized
+    with its ``job_id`` so a retried finalize returns the same job instead of
+    creating a duplicate.
+    """
     # Cost pre-flight: probe the saved file and reject over-cap sources BEFORE
     # a Modal worker is spawned. The file is local here, so ffprobe is fast
     # and reliable — this is the hard enforcement path. The probed duration
@@ -319,6 +390,8 @@ async def upload_job(
     probe_error, src_seconds = probe_and_check(local_path, is_local=True)
     if probe_error:
         Path(local_path).unlink(missing_ok=True)  # don't leave junk on the Volume
+        if meta_path is not None:
+            meta_path.unlink(missing_ok=True)
         raise HTTPException(422, probe_error)
 
     # Tier quotas (jobs/day, concurrent, monthly credits) now that we know the
@@ -333,19 +406,10 @@ async def upload_job(
     # Cost cap: never render higher than quota_max_render_height (no 4K/8K encodes).
     pref_h = clamp_render_height(preferred_height)
 
-    # Commit the Volume so the spawned pipeline worker can see the file
-    # immediately (Modal only flushes volume writes when this container exits).
-    if MODAL:
-        try:
-            import modal as _modal
-            _modal.Volume.from_name("trimaura-data").commit()
-        except Exception as e:
-            print(f"[upload] volume commit failed (non-fatal): {e}")
-
     with Session(engine) as session:
         job = Job(
             user_id=user["id"],
-            title=file.filename or "Untitled Upload",
+            title=filename or "Untitled Upload",
             source_url=local_path,
             template_id=template_id,
             campaign_rules=campaign_rules,
@@ -363,13 +427,22 @@ async def upload_job(
         deduct_credits(user["id"], src_seconds, session)
         session.commit()
 
+    # Mark the chunked session finalized (idempotency guard for retried finalize).
+    if meta_path is not None and meta is not None:
+        meta["job_id"] = job_id
+        meta_path.write_text(json.dumps(meta))
+
+    # Commit the Volume so the spawned pipeline worker can see the file
+    # immediately (Modal only flushes volume writes when this container exits).
+    _volume_commit()
+
     # Send a payload so the Modal worker can recreate the job record locally
     # if the Volume hasn't synced yet. This bypasses SQLite staleness on Modal
     # shared Volumes.
     job_payload = {
         "id": job_id,
         "user_id": user["id"],
-        "title": file.filename or "Untitled Upload",
+        "title": filename or "Untitled Upload",
         "source_url": local_path,
         "template_id": template_id,
         "campaign_rules": campaign_rules or "",
@@ -386,6 +459,133 @@ async def upload_job(
         job_id=job_id,
         status=JobStatus.PENDING,
         message="Upload received, job dispatched.",
+    )
+
+
+@router.post("/jobs/upload/init", status_code=201)
+async def upload_init(body: UploadInitRequest, user: dict = Depends(get_current_user)):
+    """Open a chunked-upload session. Returns the session id + chunk size."""
+    check_burst(user["id"], "upload")
+
+    max_bytes = settings.quota_max_upload_mb * 1024 * 1024
+    if body.size <= 0:
+        raise HTTPException(400, "Empty file")
+    if body.size > max_bytes:
+        raise HTTPException(413, f"File too large — max {settings.quota_max_upload_mb}MB")
+
+    upload_id = uuid.uuid4().hex
+    suffix = Path(body.filename).suffix if body.filename else ".mp4"
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    local_path = UPLOAD_DIR / f"{upload_id}{suffix}"
+    local_path.touch()  # stable path for the finalize probe
+    meta = {
+        "upload_id": upload_id,
+        "filename": body.filename or "upload.mp4",
+        "suffix": suffix,
+        "total_bytes": body.size,
+        "received_bytes": 0,
+        "next_index": 0,
+        "job_id": None,
+    }
+    (UPLOAD_DIR / f"{upload_id}.meta.json").write_text(json.dumps(meta))
+    _volume_commit()
+
+    return {"upload_id": upload_id, "chunk_size": _UPLOAD_CHUNK_BYTES, "status": "ready"}
+
+
+@router.post("/jobs/upload/chunk", status_code=200)
+async def upload_chunk(
+    request: Request,
+    x_upload_id: str = Header(...),
+    x_chunk_index: int = Header(...),
+    user: dict = Depends(get_current_user),
+):
+    """Append one raw chunk to the session file.
+
+    Chunks are expected strictly in order; a client that lost the ack for chunk
+    N can re-send it and we answer 409 with the next index it should send.
+    """
+    _volume_reload()
+    meta_path = UPLOAD_DIR / f"{x_upload_id}.meta.json"
+    if not meta_path.exists():
+        raise HTTPException(404, "Upload session not found or expired")
+    meta = json.loads(meta_path.read_text())
+    if meta.get("job_id"):
+        raise HTTPException(410, "Upload already finalized")
+    if x_chunk_index != meta["next_index"]:
+        raise HTTPException(409, detail={"next_index": meta["next_index"]})
+
+    data = await request.body()
+    if not data:
+        raise HTTPException(400, "Empty chunk")
+    max_bytes = settings.quota_max_upload_mb * 1024 * 1024
+    if meta["received_bytes"] + len(data) > max_bytes:
+        raise HTTPException(413, f"File too large — max {settings.quota_max_upload_mb}MB")
+    if meta["received_bytes"] + len(data) > meta["total_bytes"]:
+        raise HTTPException(
+            400,
+            f"Chunk exceeds declared size ({meta['total_bytes']} bytes)",
+        )
+
+    local_path = UPLOAD_DIR / f"{x_upload_id}{meta['suffix']}"
+    with open(local_path, "ab") as f:
+        f.write(data)
+    meta["received_bytes"] += len(data)
+    meta["next_index"] += 1
+    meta_path.write_text(json.dumps(meta))
+    _volume_commit()
+
+    return {"received": meta["received_bytes"], "next_index": meta["next_index"]}
+
+
+@router.post("/jobs/upload/finalize", status_code=202)
+async def upload_finalize(
+    upload_id: str = Form(...),
+    template_id: str = Form("auto"),
+    campaign_rules: str | None = Form(None),
+    max_clips: int = Form(5),
+    preferred_height: int | None = Form(1080),  # match JSON route default; 0 = original
+    burn_captions: str | None = Form(None),
+    trim_silence: str | None = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    """Create the job once all chunks are in place. Idempotent on retry."""
+    check_burst(user["id"], "upload")
+    _volume_reload()
+    meta_path = UPLOAD_DIR / f"{upload_id}.meta.json"
+    if not meta_path.exists():
+        raise HTTPException(404, "Upload session not found or expired")
+    meta = json.loads(meta_path.read_text())
+
+    # Idempotent finalize: a retried request returns the already-created job
+    # instead of charging credits / dispatching the pipeline twice.
+    if meta.get("job_id"):
+        return CreateJobResponse(
+            job_id=meta["job_id"],
+            status=JobStatus.PENDING,
+            message="Job already dispatched.",
+        )
+
+    if meta["received_bytes"] != meta["total_bytes"]:
+        raise HTTPException(
+            400,
+            f"Upload incomplete — received {meta['received_bytes']} of "
+            f"{meta['total_bytes']} bytes",
+        )
+
+    local_path = str(UPLOAD_DIR / f"{upload_id}{meta['suffix']}")
+    return await _finish_upload_job(
+        user=user,
+        local_path=local_path,
+        filename=meta["filename"],
+        template_id=template_id,
+        campaign_rules=campaign_rules,
+        max_clips=max_clips,
+        preferred_height=preferred_height,
+        burn_captions=burn_captions,
+        trim_silence=trim_silence,
+        meta_path=meta_path,
+        meta=meta,
     )
 
 

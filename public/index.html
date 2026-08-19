@@ -939,79 +939,93 @@ generateBtn.addEventListener('click', async () => {
       setProgress('UPLOADING', 0);
       diagLog('upload_start', { name: selectedFile.name, size: selectedFile.size, mime: selectedFile.type });
 
-      // Practical upload guard: Modal's gateway is only reliable up to ~45MB
-      // from this network; beyond that uploads enter its 303 retry protocol and
-      // may fail. Warn early instead of failing mid-upload.
-      if (selectedFile.size > 47 * 1024 * 1024) {
-        showToast('File is ' + Math.round(selectedFile.size / 1048576) + ' MB - recommended input is H.264 MP4 under ~40 MB. Very large files may fail to upload; compress first if it fails.');
+      // Chunked upload: Modal's gateway chokes on big multipart bodies (~45MB
+      // practical ceiling, 150s per request). The file is sliced into ~20MB
+      // pieces and each POST is tiny; the server appends them to the job's
+      // source file on the Volume. Server cap is quota_max_upload_mb (500MB).
+      const MAX_UPLOAD = 500 * 1024 * 1024;
+      if (selectedFile.size > MAX_UPLOAD) {
+        showToast('File is ' + Math.round(selectedFile.size / 1048576) + ' MB — max upload is 500 MB. Compress or trim it first.');
+        generateBtn.disabled = false;
+        generateBtn.textContent = 'Generate shorts';
+        progressWrap.classList.remove('active');
+        return;
       }
 
+      const initRes = await fetch('/api/jobs/upload/init', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ filename: selectedFile.name, size: selectedFile.size })
+      });
+      if (!initRes.ok) {
+        diagLog('upload_error', { status: initRes.status, body: String(await initRes.text()).slice(0, 300) });
+        throw new Error('Upload init failed (' + initRes.status + ')');
+      }
+      const initData = await initRes.json();
+      const uploadId = initData.upload_id;
+      const chunkBytes = initData.chunk_size || (20 * 1024 * 1024);
+
+      let uploaded = 0;
+      let index = 0;
+      let lastLoggedPct = -1;
+      while (uploaded < selectedFile.size) {
+        const start = index * chunkBytes;
+        const end = Math.min(start + chunkBytes, selectedFile.size);
+        const slice = selectedFile.slice(start, end);
+        let attempt = 0;
+        let sent = false;
+        while (!sent && attempt < 3) {
+          try {
+            const cres = await fetch('/api/jobs/upload/chunk', {
+              method: 'POST',
+              headers: {
+                'X-Upload-Id': uploadId,
+                'X-Chunk-Index': String(index),
+                'Content-Type': 'application/octet-stream'
+              },
+              body: slice
+            });
+            if (cres.status === 409) {
+              // Server already has this chunk (lost ack) — resume from its next.
+              const info = await cres.json().catch(() => ({}));
+              const next = (info.detail && info.detail.next_index) || index + 1;
+              uploaded = Math.min(next * chunkBytes, selectedFile.size);
+              index = next;
+              sent = true;
+            } else if (cres.ok) {
+              uploaded += slice.size;
+              index += 1;
+              sent = true;
+            } else {
+              diagLog('upload_error', { status: cres.status, via: 'chunk' });
+              attempt += 1;
+            }
+          } catch (err) {
+            diagLog('upload_error', { status: 'network', via: 'chunk' });
+            attempt += 1;
+            await new Promise(r => setTimeout(r, 400 * attempt));
+          }
+        }
+        if (!sent) { throw new Error('Upload failed'); }
+        const pct = Math.round((uploaded / selectedFile.size) * 100);
+        if (pct >= lastLoggedPct + 10) {
+          lastLoggedPct = pct;
+          diagLog('upload_progress', { pct, mb: Math.round(uploaded / 1048576) });
+        }
+        setProgress('UPLOADING', pct);
+        generateBtn.textContent = `Uploading ${pct}%`;
+      }
+      diagLog('upload_done', { via: 'chunked', bytes: uploaded });
+
       const form = new FormData();
-      form.append('file', selectedFile);
+      form.append('upload_id', uploadId);
       form.append('template_id', templateId);
       form.append('campaign_rules', campaignRules);
       form.append('max_clips', maxClips.toString());
       form.append('preferred_height', String(preferredHeight));
       form.append('burn_captions', burnCaptions ? 'true' : 'false');
       form.append('trim_silence', trimSilence ? 'true' : 'false');
-
-      res = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/jobs/upload');
-        let lastLoggedPct = -1;
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            const pct = Math.round((e.loaded / e.total) * 100);
-            if (pct >= lastLoggedPct + 10) {
-              lastLoggedPct = pct;
-              diagLog('upload_progress', { pct, mb: Math.round(e.loaded / 1048576) });
-            }
-            setProgress('UPLOADING', pct);
-            generateBtn.textContent = `Uploading ${pct}%`;
-          }
-        };
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            diagLog('upload_done', { status: xhr.status });
-            resolve(new Response(xhr.response, { status: xhr.status, headers: { 'Content-Type': 'application/json' } }));
-          } else if (xhr.status === 303) {
-            // Modal gateway large-request protocol: it answers a big upload with
-            // 303 + Location carrying __modal_attempt_token. The client must
-            // re-POST the SAME body to that Location to get the real response.
-            // (redirect:'manual' stops the browser from following the 303 as a
-            // body-less GET, which would drop the upload.)
-            const loc = xhr.getResponseHeader('Location');
-            diagLog('upload_303_retry', { loc: (loc || '').slice(0, 100) });
-            if (!loc) {
-              diagLog('upload_error', { status: xhr.status, body: 'no Location header' });
-              reject(new Error('Upload failed (' + xhr.status + ')'));
-              return;
-            }
-            fetch(loc, { method: 'POST', body: form, redirect: 'manual' })
-              .then((r) => {
-                if (r.status >= 200 && r.status < 300) {
-                  diagLog('upload_done', { status: r.status, via: 'retry' });
-                  resolve(r);
-                } else {
-                  diagLog('upload_error', { status: r.status, via: 'retry', body: '' });
-                  reject(new Error('Upload failed (' + r.status + ')'));
-                }
-              })
-              .catch(() => {
-                diagLog('upload_error', { status: 'network', via: 'retry' });
-                reject(new Error('Upload failed'));
-              });
-          } else {
-            diagLog('upload_error', { status: xhr.status, body: String(xhr.response).slice(0, 300) });
-            reject(new Error('Upload failed (' + xhr.status + ')'));
-          }
-        };
-        xhr.onerror = () => {
-          diagLog('upload_error', { status: 'network' });
-          reject(new Error('Upload failed'));
-        };
-        xhr.send(form);
-      });
+      res = await fetch('/api/jobs/upload/finalize', { method: 'POST', body: form });
     } else {
       generateBtn.textContent = 'Processing...';
       setProgress('PENDING', 0);
