@@ -94,6 +94,30 @@ class UserTier(SQLModel, table=True):
     """Per-user plan tier (free/starter/pro). Row created lazily on first use."""
     user_id: str = Field(primary_key=True)
     tier: str = Field(default="free")
+    subscription_id: str | None = None     # Dodo subscription id (recurring plans)
+    subscription_status: str | None = None  # active | cancelled | expired | on_hold | paused
+    period_end: datetime | None = None     # next billing date / expiry
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class Payment(SQLModel, table=True):
+    """One checkout session (top-up or subscription start) + payment outcome.
+
+    ``session_id`` is unique so retried webhooks can't double-grant credits.
+    Rows are created when the checkout is issued and updated on webhook.
+    """
+    id: int | None = Field(default=None, primary_key=True)
+    session_id: str = Field(unique=True, index=True)
+    payment_id: str | None = None      # Dodo payment id (set on payment.succeeded; refunds match on it)
+    user_id: str = Field(index=True)
+    kind: str = Field(default="topup")   # "topup" | "subscription"
+    plan: str | None = None              # "starter" | "pro" for subscriptions
+    credits: int = Field(default=0)      # credits granted for top-ups
+    amount_cents: int = Field(default=0)
+    currency: str = Field(default="USD")
+    status: str = Field(default="pending")  # pending | succeeded | refunded | failed
+    event_id: str | None = None          # Dodo event id (dedupe)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

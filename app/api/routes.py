@@ -14,6 +14,7 @@ from app.api.sse import event_stream
 from app.auth import get_current_user
 from app.config import MODAL, settings
 from app.database import engine
+from app.dodo import create_checkout_session, handle_event, verify_webhook
 from app.models import (
     Job,
     JobStatus,
@@ -601,17 +602,51 @@ class TopupRequest(BaseModel):
     credits: int = Field(ge=1, le=10000)
 
 
+class CheckoutRequest(BaseModel):
+    kind: str = "topup"                 # "topup" | "subscription"
+    pack: str | None = None             # "250" | "500" for top-ups
+    plan: str | None = None             # "starter" | "pro" for subscriptions
+
+
+@router.post("/checkout", status_code=200)
+def create_checkout(body: CheckoutRequest, user: dict = Depends(get_current_user)):
+    """Create a Dodo hosted-checkout (top-up or subscription) and return the
+    redirect URL. The `payment` row is written at creation so webhooks are
+    idempotent — a paid session can never double-grant credits.
+    """
+    return create_checkout_session(
+        user["id"],
+        kind=body.kind,
+        pack=body.pack,
+        plan=body.plan,
+    )
+
+
+@router.post("/webhooks/dodo", status_code=200)
+async def dodo_webhook(request: Request):
+    """Dodo webhook endpoint — signature-verified, idempotent handlers.
+
+    NOT auth-gated: Dodo cannot send a Supabase JWT. Trust comes from the
+    signed payload (standardwebhooks), which we verify before touching state.
+    Unknown event types are acked and ignored.
+    """
+    payload = (await request.body()).decode("utf-8")
+    event = verify_webhook(payload, dict(request.headers))
+    handle_event(event)
+    return {"received": True}
+
+
 @router.post("/credits/topup")
 def topup_credits(body: TopupRequest, user: dict = Depends(get_current_user)):
-    """Admin-gated credit grant for testing — replaced by Stripe checkout when
-    billing goes live. Credits are added on top of the tier's monthly allowance
-    and are the hook the checkout/webhook will call.
+    """Admin-only manual credit grant (testing/support). Normal purchases go
+    through POST /api/checkout → Dodo hosted checkout → payment.succeeded
+    webhook, which adds credits via the same field (monthly_usage.topup_credits).
     """
     admins = {e.strip() for e in (settings.admin_emails or "").split(",") if e.strip()}
     if (user.get("email") or "") not in admins:
         raise HTTPException(
             403,
-            "Payments aren't wired yet — top-ups are admin-only for now.",
+            "Admin only — buy credits from the Billing modal instead.",
         )
     month = datetime.now(UTC).strftime("%Y-%m")
     with Session(engine) as session:

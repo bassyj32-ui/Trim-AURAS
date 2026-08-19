@@ -86,11 +86,15 @@ def get_usage_summary(user_id: str) -> dict:
     month = _month()
     with Session(engine) as session:
         usage = session.get(MonthlyUsage, (user_id, month))
+        tier_row = session.get(UserTier, user_id)
     used = usage.credits_used if usage else 0
     topups = usage.topup_credits if usage else 0
     jobs = usage.jobs_used if usage else 0
     return {
         "tier": get_tier(user_id),
+        "subscription_status": tier_row.subscription_status if tier_row else None,
+        "subscription_id": tier_row.subscription_id if tier_row else None,
+        "period_end": tier_row.period_end.isoformat() if tier_row and tier_row.period_end else None,
         "month": month,
         "credits_used": used,
         "topup_credits": topups,

@@ -87,7 +87,7 @@
   <div class="nav-tabs">
     <button class="nav-tab active" id="navStudio">Studio</button>
     <button class="nav-tab" id="navLibrary">Library</button>
-    <button class="nav-tab" id="navBilling">Billing <span class="lock">SOON</span></button>
+    <button class="nav-tab" id="navBilling">Billing</button>
     <button class="nav-tab" id="navSettings">Settings</button>
   </div>
   <div class="nav-right">3 CLIPS LEFT THIS WEEK <span class="meter"><i style="width:40%"></i></span></div>
@@ -353,7 +353,7 @@
   </div>
 </div>
 
-<!-- Plans modal (payment-ready shell — desktop ≥1025px) -->
+<!-- Plans modal (Dodo Payments hosted checkout) -->
 <div class="modal-overlay" id="plansOverlay">
   <div class="modal">
     <div class="modal-top">
@@ -366,44 +366,60 @@
     <div class="plans-grid">
       <div class="plan-card">
         <div class="plan-name">Free</div>
-        <div class="plan-price">$0<small> / forever</small></div>
-        <div class="plan-desc">Try it out. Watermark, limited clips, no priority queue.</div>
+        <div class="plan-price">$0<small> / month</small></div>
+        <div class="plan-desc">Try it out — enough to test a few uploads.</div>
         <div class="plan-feats">
-          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>3 clips / week</div>
-          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Watermark on exports</div>
-          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>720p max</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>60 minutes / month</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>15 min max per job</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>10 clips / month</div>
         </div>
         <button class="plan-cta" disabled style="opacity:0.55;cursor:default;">Current plan</button>
+      </div>
+
+      <div class="plan-card">
+        <div class="plan-name">Starter</div>
+        <div class="plan-price">$4.99<small> / month</small></div>
+        <div class="plan-desc">For hobbyists posting a few times a week.</div>
+        <div class="plan-feats">
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>600 minutes / month</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>60 min max per job</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>100 clips / month</div>
+        </div>
+        <button class="plan-cta" id="starterBtn">Upgrade to Starter</button>
       </div>
 
       <div class="plan-card hot">
         <div class="plan-pop">MOST POPULAR</div>
         <div class="plan-name">Pro</div>
-        <div class="plan-price">$14<small> / month</small></div>
+        <div class="plan-price">$9.99<small> / month</small></div>
         <div class="plan-desc">For creators shipping every week.</div>
         <div class="plan-feats">
-          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Unlimited clips</div>
-          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>No watermark</div>
-          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>1080p + all templates</div>
-          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Priority queue</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>1,500 minutes / month</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>120 min max per job</div>
+          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>400 clips / month</div>
         </div>
         <button class="plan-cta" id="proBtn">Upgrade to Pro</button>
       </div>
+    </div>
 
+    <div style="height:1px;background:var(--hairline);margin:18px 0;"></div>
+    <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:10px;letter-spacing:0.5px;">OUT OF MINUTES? BUY MORE</div>
+    <div class="plans-grid">
       <div class="plan-card">
-        <div class="plan-name">Studio</div>
-        <div class="plan-price">$39<small> / month</small></div>
-        <div class="plan-desc">Teams, agencies and heavy workflows.</div>
-        <div class="plan-feats">
-          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Everything in Pro</div>
-          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>5 team seats</div>
-          <div class="plan-feat"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>4K + brand kits</div>
-        </div>
-        <button class="plan-cta" id="studioBtn">Choose Studio</button>
+        <div class="plan-name">250 minutes</div>
+        <div class="plan-price">$4.99<small> / one-time</small></div>
+        <div class="plan-desc">A quick top-up for when the month runs dry.</div>
+        <button class="plan-cta" id="buy250Btn">Buy 250 min</button>
+      </div>
+      <div class="plan-card">
+        <div class="plan-name">500 minutes</div>
+        <div class="plan-price">$9.99<small> / one-time</small></div>
+        <div class="plan-desc">Best value per minute for heavy weeks.</div>
+        <button class="plan-cta" id="buy500Btn">Buy 500 min</button>
       </div>
     </div>
 
-    <div class="modal-foot">SECURE CHECKOUT VIA STRIPE · CANCEL ANYTIME</div>
+    <div class="modal-foot">SECURE CHECKOUT VIA DODO PAYMENTS · PAY BY CARD OR USDT · CANCEL ANYTIME</div>
   </div>
 </div>
 
@@ -1798,12 +1814,41 @@ if ('serviceWorker' in navigator) {
   var closePlansBtn = document.getElementById('closePlansBtn');
   if (closePlansBtn) closePlansBtn.addEventListener('click', closePlans);
   if (plansOverlay) plansOverlay.addEventListener('click', function (e) { if (e.target === plansOverlay) closePlans(); });
-  // Plan CTAs — placeholder until Stripe is wired
+  // Plan CTAs — Dodo hosted checkout (auth.js injects the bearer token)
+  function startCheckout(body) {
+    if (!window.__authToken) {
+      if (window.TrimAuraAuth) window.TrimAuraAuth.openAuth('Sign in to upgrade');
+      return;
+    }
+    showToast('Opening secure checkout…');
+    fetch('/api/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(function (res) {
+      return res.json().then(function (data) {
+        if (!res.ok) throw new Error(data.detail || 'Could not start checkout');
+        return data;
+      });
+    }).then(function (data) {
+      if (data && data.checkout_url) {
+        closePlans();
+        window.location.href = data.checkout_url; // Dodo's hosted payment page
+      } else {
+        throw new Error('No checkout URL returned');
+      }
+    }).catch(function (err) {
+      showToast(err.message || 'Could not start checkout');
+    });
+  }
   document.querySelectorAll('.plan-cta').forEach(function (b) {
     if (b.disabled) return;
     b.addEventListener('click', function () {
-      closePlans();
-      showToast('Stripe checkout coming soon');
+      var id = b.id;
+      if (id === 'starterBtn') startCheckout({ kind: 'subscription', plan: 'starter' });
+      else if (id === 'proBtn') startCheckout({ kind: 'subscription', plan: 'pro' });
+      else if (id === 'buy250Btn') startCheckout({ kind: 'topup', pack: '250' });
+      else if (id === 'buy500Btn') startCheckout({ kind: 'topup', pack: '500' });
     });
   });
 

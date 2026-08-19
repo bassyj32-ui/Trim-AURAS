@@ -81,6 +81,24 @@ class Settings(BaseSettings):
     }
     topup_credit_price: float = 0.0199   # USD per credit ($1.99 per 100 min)
 
+    # Dodo Payments (merchant-of-record; works where Stripe doesn't, e.g.
+    # Ethiopia, and settles payouts in USDT). Keys/products come from the Dodo
+    # dashboard (app.dodopayments.com). Everything is inert until DODO_API_KEY
+    # is set, so the app stays runnable pre-billing. Product IDs look like
+    # "pdt_..." and are created in the Dodo dashboard.
+    dodo_api_key: str = ""        # test/live bearer token
+    dodo_webhook_key: str = ""    # webhook signing secret (dashboard > webhooks)
+    dodo_test_mode: bool = True
+    dodo_product_starter: str = ""   # $4.99/mo subscription
+    dodo_product_pro: str = ""       # $9.99/mo subscription
+    dodo_product_topup_250: str = "" # $4.99 one-time / 250 credits
+    dodo_product_topup_500: str = "" # $9.95 one-time / 500 credits
+    topup_pack_250_credits: int = 250
+    topup_pack_500_credits: int = 500
+    topup_pack_250_price: float = 4.99
+    topup_pack_500_price: float = 9.99
+    checkout_return_url: str = ""  # where Dodo sends the customer after paying
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
