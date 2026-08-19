@@ -117,6 +117,23 @@ def create_checkout_session(user: dict, kind: str, pack: str | None = None,
         billing_address={"country": "US"},
         billing_currency="USD",
         minimal_address=True,
+        # Keep Dodo's hosted page to the bare minimum: no discount-code box,
+        # no phone field, no tax-id field, currency locked to USD, and the
+        # contact/address we already prefilled locked so the customer only
+        # types the card + zipcode. Redirect straight back after payment.
+        feature_flags={
+            "allow_discount_code": False,
+            "allow_phone_number_collection": False,
+            "allow_tax_id": False,
+            "allow_currency_selection": False,
+            "allow_customer_editing_email": False,
+            "allow_customer_editing_name": False,
+            "allow_customer_editing_country": False,
+            "allow_customer_editing_city": False,
+            "allow_customer_editing_state": False,
+            "allow_customer_editing_street": False,
+            "redirect_immediately": True,
+        },
         return_url=settings.checkout_return_url or None,
         cancel_url=settings.checkout_return_url or None,
     )
