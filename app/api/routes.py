@@ -22,6 +22,7 @@ from app.pipeline.orchestrator import (
     save_job_cookies,
     trim_clip,
 )
+from app.quotas import check_burst, check_clip_quota, check_create_job_quota
 from app.ssrf import validate_source_url
 from app.storage import generate_presigned_url
 
@@ -152,6 +153,13 @@ def _owned_clip(session: Session, clip_id: int, user_id: str) -> VideoClip:
 
 @router.post("/jobs", status_code=202)
 async def create_job(body: CreateJobRequest, user: dict = Depends(get_current_user)):
+    # Quotas first — fail fast before any Modal worker is spawned.
+    check_burst(user["id"], "job")
+    check_create_job_quota(user["id"])
+
+    # Server-side clamp so a client can't ask for 99 clips and burn compute.
+    max_clips = max(1, min(body.max_clips or 1, settings.quota_max_clips_per_job))
+
     url = (body.source_url or "").strip().lower()
     if url and not url.startswith(("http://", "https://")) and not url.endswith(_VIDEO_EXTS):
         raise HTTPException(
@@ -183,7 +191,7 @@ async def create_job(body: CreateJobRequest, user: dict = Depends(get_current_us
             source_url=body.source_url,
             template_id=body.template_id,
             campaign_rules=body.campaign_rules,
-            max_clips=body.max_clips,
+            max_clips=max_clips,
             preferred_height=body.preferred_height,
             burn_captions=body.burn_captions,
             trim_silence=body.trim_silence,
@@ -214,7 +222,7 @@ async def create_job(body: CreateJobRequest, user: dict = Depends(get_current_us
         "source_url": body.source_url,
         "template_id": body.template_id,
         "campaign_rules": body.campaign_rules or "",
-        "max_clips": body.max_clips,
+        "max_clips": max_clips,
         "preferred_height": body.preferred_height if body.preferred_height is not None else 0,
         "cookies": body.cookies or "",
         "burn_captions": body.burn_captions,
@@ -241,12 +249,31 @@ async def upload_job(
     trim_silence: str | None = Form(None),
     user: dict = Depends(get_current_user),
 ):
+    # Quotas first — fail fast before accepting the body / spawning work.
+    check_burst(user["id"], "upload")
+    check_create_job_quota(user["id"])
+
+    # Server-side clamp for the multipart path too.
+    max_clips = max(1, min(max_clips or 1, settings.quota_max_clips_per_job))
+
     suffix = Path(file.filename).suffix if file.filename else ".mp4"
     upload_dir = Path("/mnt/data/uploads")
     upload_dir.mkdir(parents=True, exist_ok=True)
     local_path = str(upload_dir / f"{uuid.uuid4()}{suffix}")
+
+    # Hard size cap so a client can't dump a multi-GB file into the Volume.
+    max_bytes = settings.quota_max_upload_mb * 1024 * 1024
+    written = 0
     with open(local_path, "wb") as f:
         while chunk := await file.read(1024 * 1024):  # 1MB chunks
+            written += len(chunk)
+            if written > max_bytes:
+                f.close()
+                Path(local_path).unlink(missing_ok=True)
+                raise HTTPException(
+                    413,
+                    f"File too large — max {settings.quota_max_upload_mb}MB",
+                )
             f.write(chunk)
 
     # Coerce Form strings to real types BEFORE Job()/payload — SQLModel table
@@ -502,13 +529,19 @@ async def api_generate_more(
                 400,
                 "Job has no saved transcript. Run the initial pipeline first.",
             )
+        job_ref = job
 
-    await _dispatch_generate_more(job_id, count=body.count)
+    # Quotas — burst throttle + per-job clip cap (clamp count server-side).
+    check_burst(user["id"], "generate_more")
+    check_clip_quota(job_ref, extra=body.count)
+    count = max(1, min(body.count or 1, settings.quota_generate_more_max))
+
+    await _dispatch_generate_more(job_id, count=count)
 
     return {
         "job_id": job_id,
         "status": JobStatus.ANALYZING,
-        "message": f"Generating {body.count} more clips.",
+        "message": f"Generating {count} more clips.",
     }
 
 
@@ -552,6 +585,7 @@ def list_clips(user: dict = Depends(get_current_user)):
 
 @router.post("/clips/{clip_id}/refresh-seo")
 async def api_refresh_seo(clip_id: int, user: dict = Depends(get_current_user)):
+    check_burst(user["id"], "refresh_seo")
     with Session(engine) as session:
         _owned_clip(session, clip_id, user["id"])
     try:
@@ -619,6 +653,7 @@ async def api_trim_clip(
     """
     if body.start >= body.end:
         raise HTTPException(400, "start must be < end")
+    check_burst(user["id"], "trim")
     with Session(engine) as session:
         clip = _owned_clip(session, clip_id, user["id"])
         if body.start < clip.start_time or body.end > clip.end_time:

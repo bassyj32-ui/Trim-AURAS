@@ -1,6 +1,6 @@
 import asyncio
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from typing import AsyncGenerator
 
 import pytest
@@ -24,9 +24,10 @@ import app.pipeline.seo_generator as seo_module
 import app.pipeline.face_track as ft_module
 import app.storage as storage_module
 import app.push as push_module
+import app.quotas as quotas_module
 
 from app.main import app
-from app.models import Job, JobStatus, VideoClip, PushSubscription
+from app.models import Job, JobStatus, VideoClip
 
 
 @pytest.fixture(scope="session")
@@ -56,11 +57,10 @@ def session(test_engine):
 
 @pytest.fixture(scope="function", autouse=True)
 def patch_engine(test_engine, monkeypatch):
-    for mod in (db_module, orch_module, tr_module, int_module, ve_module, seo_module, ft_module, storage_module, push_module):
+    for mod in (db_module, orch_module, tr_module, int_module, ve_module, seo_module, ft_module, storage_module, push_module, quotas_module):
         if hasattr(mod, "engine"):
             monkeypatch.setattr(mod, "engine", test_engine)
     # Also patch the routes module which imports engine directly
-    import app.api.routes as routes_module
     monkeypatch.setattr(routes_module, "engine", test_engine)
 
 

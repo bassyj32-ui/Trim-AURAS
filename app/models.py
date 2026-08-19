@@ -70,6 +70,20 @@ class PushSubscription(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class QuotaUsage(SQLModel, table=True):
+    """Sliding-window burst counter for expensive endpoints (DB-backed).
+
+    Modal scale-to-zero can run several ASGI containers, so in-memory rate
+    counters are wrong; a Postgres row per (user, action, window) is correct.
+    Rows are pruned when older than the window, keeping the table tiny.
+    """
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    action: str = Field(index=True)          # e.g. "job", "generate_more", "trim", "refresh_seo"
+    window_start: datetime = Field(index=True)  # minute bucket start
+    count: int = Field(default=0)
+
+
 def clip_vault_cutoff() -> datetime:
     """Clips older than 14 days from now are considered expired."""
     return datetime.now(UTC) - timedelta(days=14)

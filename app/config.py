@@ -40,6 +40,15 @@ class Settings(BaseSettings):
         "http://localhost:8100,http://127.0.0.1:8100"
     )
 
+    # Per-user quotas — DB-backed (Supabase), enforced BEFORE a Modal worker
+    # is spawned so abuse fails fast without burning compute. Tune via env.
+    quota_max_concurrent_jobs: int = 3   # non-terminal jobs in flight at once
+    quota_max_daily_jobs: int = 20       # jobs created per rolling 24h
+    quota_max_clips_per_job: int = 15    # total clips per job (incl. generate-more)
+    quota_generate_more_max: int = 3     # clips per generate-more call
+    quota_max_upload_mb: int = 500       # hard cap on local uploads
+    quota_heavy_per_minute: int = 10     # burst cap on expensive writes/min
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
