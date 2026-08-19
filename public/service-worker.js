@@ -1,8 +1,7 @@
-const CACHE = "trimaura-v11";
+const CACHE = "trimaura-v12";
 const SHELL = [
   "/",
   "/index.html",
-  "/clip.html",
   "/styles.css",
   "/auth.js",
   "/manifest.json",

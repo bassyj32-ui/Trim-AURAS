@@ -241,18 +241,20 @@
       <button class="btn-small btn-outline" id="downloadBtn">Download MP4</button>
     </div>
     <div id="trimSection" style="margin-top:18px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
         <div style="font-size:13px;font-weight:700;">Trim Clip</div>
         <button class="btn-small btn-primary" id="saveTrimBtn" style="padding:6px 14px;">Save Trim</button>
       </div>
-      <label style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--ink-dim);margin-bottom:2px;">
-        <span>Start</span><span id="trimStartLabel" style="font-weight:700;color:var(--ink);"></span>
-      </label>
-      <input type="range" id="trimStartSlider" min="0" max="100" value="0" step="0.5" style="width:100%;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;" aria-label="Trim start position">
-      <label style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--ink-dim);margin:10px 0 2px;">
-        <span>End</span><span id="trimEndLabel" style="font-weight:700;color:var(--ink);"></span>
-      </label>
-      <input type="range" id="trimEndSlider" min="0" max="100" value="100" step="0.5" style="width:100%;-webkit-appearance:none;appearance:none;height:4px;background:var(--hairline);border-radius:2px;outline:none;cursor:pointer;" aria-label="Trim end position">
+      <div class="trim-track-wrap" style="position:relative;height:34px;">
+        <div class="trim-rail" style="position:absolute;top:15px;left:0;right:0;height:4px;background:var(--hairline);border-radius:2px;"></div>
+        <div class="trim-range" id="trimRange" style="position:absolute;top:15px;height:4px;background:linear-gradient(90deg,var(--gold),var(--gold-deep));border-radius:2px;"></div>
+        <div class="trim-thumb trim-thumb-left" id="trimThumbLeft" style="position:absolute;top:7px;width:18px;height:18px;border-radius:50%;background:var(--card);border:2px solid var(--gold-deep);box-shadow:0 1px 4px rgba(0,0,0,0.25);cursor:grab;touch-action:none;"></div>
+        <div class="trim-thumb trim-thumb-right" id="trimThumbRight" style="position:absolute;top:7px;width:18px;height:18px;border-radius:50%;background:var(--card);border:2px solid var(--gold-deep);box-shadow:0 1px 4px rgba(0,0,0,0.25);cursor:grab;touch-action:none;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-dim);margin-top:2px;">
+        <span id="trimStartLabel" style="font-weight:700;color:var(--ink);"></span>
+        <span id="trimEndLabel" style="font-weight:700;color:var(--ink);"></span>
+      </div>
       <div id="trimStatus" style="font-size:10px;color:var(--ink-dim);margin-top:6px;line-height:1.4;"></div>
     </div>
     <div class="publish-block" style="margin-top:18px;">
@@ -553,8 +555,9 @@ const refreshSeoBtn = document.getElementById('refreshSeoBtn');
 const openPlayerBtn = document.getElementById('openPlayerBtn');
 const copyLinkBtn = document.getElementById('copyLinkBtn');
 const downloadBtn = document.getElementById('downloadBtn');
-const trimStartSlider = document.getElementById('trimStartSlider');
-const trimEndSlider = document.getElementById('trimEndSlider');
+const trimThumbLeft = document.getElementById('trimThumbLeft');
+const trimThumbRight = document.getElementById('trimThumbRight');
+const trimRange = document.getElementById('trimRange');
 const trimStartLabel = document.getElementById('trimStartLabel');
 const trimEndLabel = document.getElementById('trimEndLabel');
 const trimStatus = document.getElementById('trimStatus');
@@ -1339,44 +1342,72 @@ function showClip(clip) {
 }
 
 // --- Trim Clip ---
+let trimStartPct = 0;
+let trimEndPct = 100;
+
 function initTrimControls(clip) {
   const start = clip.start_time || 0;
   const end = clip.end_time || 0;
   trimCtx = { start, end };
-  trimStartSlider.value = 0;
-  trimEndSlider.value = 100;
+  trimStartPct = 0;
+  trimEndPct = 100;
   saveTrimBtn.disabled = false;
   saveTrimBtn.textContent = 'Save Trim';
-  trimStatus.textContent = 'Original: ' + start.toFixed(1) + 's – ' + end.toFixed(1) + 's. Drag to cut dead air — the clip can only get shorter.';
+  trimStatus.textContent = 'Original: ' + start.toFixed(1) + 's – ' + end.toFixed(1) + 's. Drag the handles to cut dead air — the clip can only get shorter.';
   updateTrimLabels();
 }
 
 function trimValues() {
   const d = Math.max((trimCtx.end - trimCtx.start), 1);
-  const newStart = trimCtx.start + d * (parseFloat(trimStartSlider.value) / 100);
-  const newEnd = trimCtx.start + d * (parseFloat(trimEndSlider.value) / 100);
+  const newStart = trimCtx.start + d * (trimStartPct / 100);
+  const newEnd = trimCtx.start + d * (trimEndPct / 100);
   return { newStart, newEnd };
+}
+
+function trimPctFromPointer(e) {
+  const track = trimRange.parentElement;
+  const rect = track.getBoundingClientRect();
+  const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+  return Math.min(100, Math.max(0, (x / rect.width) * 100));
 }
 
 function updateTrimLabels() {
   const { newStart, newEnd } = trimValues();
   trimStartLabel.textContent = newStart.toFixed(1) + 's';
   trimEndLabel.textContent = newEnd.toFixed(1) + 's';
+  const left = trimStartPct + '%';
+  const width = (trimEndPct - trimStartPct) + '%';
+  trimRange.style.left = left;
+  trimRange.style.width = width;
+  trimThumbLeft.style.left = 'calc(' + left + ' - 9px)';
+  trimThumbRight.style.left = 'calc(' + (trimEndPct) + '% - 9px)';
 }
 
-trimStartSlider.addEventListener('input', () => {
-  if (parseFloat(trimStartSlider.value) > parseFloat(trimEndSlider.value)) {
-    trimStartSlider.value = trimEndSlider.value;
-  }
-  updateTrimLabels();
-});
+function bindTrimThumb(thumb, isStart) {
+  let dragging = false;
+  thumb.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    thumb.setPointerCapture(e.pointerId);
+    thumb.style.cursor = 'grabbing';
+  });
+  thumb.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const pct = trimPctFromPointer(e);
+    if (isStart) {
+      trimStartPct = Math.min(pct, trimEndPct - 1);
+    } else {
+      trimEndPct = Math.max(pct, trimStartPct + 1);
+    }
+    updateTrimLabels();
+  });
+  const release = () => { dragging = false; thumb.style.cursor = 'grab'; };
+  thumb.addEventListener('pointerup', release);
+  thumb.addEventListener('pointercancel', release);
+}
 
-trimEndSlider.addEventListener('input', () => {
-  if (parseFloat(trimEndSlider.value) < parseFloat(trimStartSlider.value)) {
-    trimEndSlider.value = trimStartSlider.value;
-  }
-  updateTrimLabels();
-});
+bindTrimThumb(trimThumbLeft, true);
+bindTrimThumb(trimThumbRight, false);
 
 saveTrimBtn.addEventListener('click', async () => {
   if (!selectedClip || !trimCtx) return;
