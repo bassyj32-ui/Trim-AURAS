@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     dodo_product_starter: str = ""   # $4.99/mo subscription
     dodo_product_pro: str = ""       # $9.99/mo subscription
     dodo_product_topup_250: str = "" # $4.99 one-time / 250 credits
-    dodo_product_topup_500: str = "" # $9.95 one-time / 500 credits
+    dodo_product_topup_500: str = "" # $9.99 one-time / 500 credits
     topup_pack_250_credits: int = 250
     topup_pack_500_credits: int = 500
     topup_pack_250_price: float = 4.99
