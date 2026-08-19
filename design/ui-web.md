@@ -48,7 +48,7 @@
 
   .avatar{ width:56px; height:56px; border-radius:50%; margin:0 auto 12px; background:#1C1917; display:flex; align-items:center; justify-content:center; }
 
-  .avatar-mark{ width:17px; height:17px; background:var(--gold); clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); }
+  .avatar-mark{ width:17px; height:17px; background:var(--gold); clip-path: polygon(0% 25%, 100% 50%, 0% 75%); }
 
   .p-name{ font-size:22px; font-weight:800; }
 

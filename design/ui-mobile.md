@@ -126,7 +126,7 @@
 
   }
 
-  .avatar-mark{ width:19px; height:19px; background: linear-gradient(155deg,#E8C778,#9C7530); clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); }
+  .avatar-mark{ width:19px; height:19px; background: linear-gradient(155deg,#E8C778,#9C7530); clip-path: polygon(0% 25%, 100% 50%, 0% 75%); }
 
   .p-name{ font-size: 17px; font-weight:800; letter-spacing:-0.2px; }
 
