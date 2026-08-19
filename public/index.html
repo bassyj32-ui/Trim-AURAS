@@ -440,7 +440,7 @@
 // --- State ---
 let templates = [];
 let currentJobId = null;
-let pollTimer = null;
+let pollWatcher = null;
 let drawerJobId = null;
 let drawerClips = [];
 let drawerClipIndex = 0;
@@ -1046,63 +1046,129 @@ generateBtn.addEventListener('click', async () => {
   }
 });
 
-// --- Polling ---
-// NOTE (diag): this uses setInterval(…, 2000), which browsers throttle
-// heavily when the tab is backgrounded or the screen is locked (iOS Safari
-// can pause it entirely). The poll_gap log below measures that directly:
-// with a 2s interval, any gap >5s proves the page's timers were throttled.
+// --- Polling / SSE ---
+// NOTE (diag): the backend exposes both /poll (short request) and /stream
+// (Server-Sent Events). SSE can't set an Authorization header from a plain
+// EventSource, so we consume /stream via the patched fetch() (which injects
+// the Bearer token automatically) and parse the text/event-stream body.
+// If the stream can't open or dies, we transparently fall back to the old
+// 2s interval polling so the UI never hangs.
+function watchJob(jobId, onStatus) {
+  let stopped = false;
+  let pollTimer = null;
+  let reader = null;
+  let decoder = new TextDecoder();
+
+  function stop() {
+    stopped = true;
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (reader) { try { reader.cancel(); } catch (e) {} reader = null; }
+  }
+
+  function startPolling() {
+    if (stopped) return;
+    diagLog('poll_fallback', { job: jobId });
+    let lastPollAt = Date.now();
+    pollTimer = setInterval(async () => {
+      const now = Date.now();
+      const gap = now - lastPollAt;
+      lastPollAt = now;
+      try {
+        const res = await fetch(`/api/jobs/${jobId}/poll`);
+        if (!res.ok) {
+          diagLog('poll_http_error', { job: jobId, status: res.status });
+          return;
+        }
+        const data = await res.json();
+        if (gap > 5000) diagLog('poll_gap', { job: jobId, ms: gap }); // throttled!
+        diagLog('poll_resp', { job: jobId, status: data.status, progress: data.progress, gap_ms: gap, mode: 'poll' });
+        onStatus(data);
+      } catch (e) {
+        diagLog('poll_error', { job: jobId, err: String((e && e.message) || e) });
+        // Silently retry
+      }
+    }, 2000);
+  }
+
+  (async () => {
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/stream`, {
+        headers: { Accept: 'text/event-stream' },
+      });
+      if (!res.ok || !res.body) throw new Error('stream unavailable: ' + res.status);
+      reader = res.body.getReader();
+      let buffer = '';
+      while (!stopped) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buffer.indexOf('\n\n')) >= 0) {
+          const chunk = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          let dataLine = null;
+          for (const line of chunk.split('\n')) {
+            if (line.startsWith('data:')) dataLine = line.slice(5).trim();
+          }
+          if (!dataLine) continue;
+          try {
+            const data = JSON.parse(dataLine);
+            diagLog('poll_resp', { job: jobId, status: data.status, progress: data.progress, mode: 'sse' });
+            onStatus(data);
+          } catch (e) { /* ignore malformed frame */ }
+        }
+      }
+      reader = null;
+      if (!stopped) startPolling(); // stream ended w/o terminal -> fall back
+    } catch (e) {
+      if (!stopped) startPolling();
+    }
+  })();
+
+  return { stop };
+}
+
 function startPolling(jobId) {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (pollWatcher) { pollWatcher.stop(); pollWatcher = null; }
   diagLog('poll_start', { job: jobId });
   let lastPollAt = Date.now();
 
-  pollTimer = setInterval(async () => {
+  const handle = (data) => {
     const now = Date.now();
     const gap = now - lastPollAt;
     lastPollAt = now;
-    try {
-      const res = await fetch(`/api/jobs/${jobId}/poll`);
-      if (!res.ok) {
-        diagLog('poll_http_error', { job: jobId, status: res.status });
-        return;
-      }
-      const data = await res.json();
-      if (gap > 5000) diagLog('poll_gap', { job: jobId, ms: gap }); // throttled!
-      diagLog('poll_resp', { job: jobId, status: data.status, progress: data.progress, gap_ms: gap });
-      setProgress(data.status, data.progress);
+    setProgress(data.status, data.progress);
 
-      if (data.status === 'COMPLETED') {
-        diagLog('poll_terminal', { job: jobId, status: 'COMPLETED' });
-        clearInterval(pollTimer);
-        pollTimer = null;
-        generateBtn.disabled = false;
-        generateBtn.textContent = 'Generate shorts';
-        generateMoreBtn.disabled = false;
-        generateMoreBtn.textContent = '＋ Generate more clips';
-        progressWrap.classList.remove('active');
-        clearUpload();
-        renderResults(jobId);
-        loadHistory();
-        showToast('Shorts generated!');
-        sendNotification('TrimAURA', '✅ Shorts generated! Your clips are ready.');
-      }
-      if (data.status === 'FAILED') {
-        diagLog('poll_terminal', { job: jobId, status: 'FAILED', error: data.error || '' });
-        clearInterval(pollTimer);
-        pollTimer = null;
-        generateBtn.disabled = false;
-        generateBtn.textContent = 'Generate shorts';
-        generateMoreBtn.disabled = false;
-        generateMoreBtn.textContent = '＋ Generate more clips';
-        resultsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--red);font-size:12px;">Generation failed: ' + (data.error || 'Unknown error') + '</div>';
-        showToast('Failed: ' + (data.error || 'Unknown error'));
-        if (!pushEnabled) sendNotification('TrimAURA', '❌ Generation failed: ' + (data.error || 'Unknown error'));
-      }
-    } catch(e) {
-      diagLog('poll_error', { job: jobId, err: String((e && e.message) || e) });
-      // Silently retry
+    if (data.status === 'COMPLETED') {
+      diagLog('poll_terminal', { job: jobId, status: 'COMPLETED' });
+      pollWatcher.stop();
+      pollWatcher = null;
+      generateBtn.disabled = false;
+      generateBtn.textContent = 'Generate shorts';
+      generateMoreBtn.disabled = false;
+      generateMoreBtn.textContent = '＋ Generate more clips';
+      progressWrap.classList.remove('active');
+      clearUpload();
+      renderResults(jobId);
+      loadHistory();
+      showToast('Shorts generated!');
+      sendNotification('TrimAURA', '✅ Shorts generated! Your clips are ready.');
     }
-  }, 2000);
+    if (data.status === 'FAILED') {
+      diagLog('poll_terminal', { job: jobId, status: 'FAILED', error: data.error || '' });
+      pollWatcher.stop();
+      pollWatcher = null;
+      generateBtn.disabled = false;
+      generateBtn.textContent = 'Generate shorts';
+      generateMoreBtn.disabled = false;
+      generateMoreBtn.textContent = '＋ Generate more clips';
+      resultsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--red);font-size:12px;">Generation failed: ' + (data.error || 'Unknown error') + '</div>';
+      showToast('Failed: ' + (data.error || 'Unknown error'));
+      if (!pushEnabled) sendNotification('TrimAURA', '❌ Generation failed: ' + (data.error || 'Unknown error'));
+    }
+  };
+
+  pollWatcher = watchJob(jobId, handle);
 }
 
 function setProgress(status, pct) {
@@ -1258,42 +1324,39 @@ function waitForTrimDone(clipId) {
   return new Promise((resolve) => {
     if (!drawerJobId) { resolve(); return; }
     let seenRendering = false;
-    let elapsed = 0;
-    const timer = setInterval(async () => {
-      elapsed += 1500;
-      if (elapsed > 150000) { // 2.5 min safety cap
-        clearInterval(timer);
-        trimStatus.textContent = 'Trim timed out — check the clip again shortly.';
+    const capTimer = setTimeout(() => { // 2.5 min safety cap
+      clearTimeout(capTimer);
+      watcher.stop();
+      trimStatus.textContent = 'Trim timed out — check the clip again shortly.';
+      saveTrimBtn.disabled = false;
+      saveTrimBtn.textContent = 'Save Trim';
+      showToast('Trim timed out');
+      resolve();
+    }, 150000);
+
+    const watcher = watchJob(drawerJobId, async (data) => {
+      if (data.status === 'RENDERING') seenRendering = true;
+      diagLog('trim_poll', { job: drawerJobId, status: data.status, clip: clipId });
+      if (data.status === 'FAILED') {
+        clearTimeout(capTimer);
+        watcher.stop();
+        trimStatus.textContent = 'Trim failed: ' + (data.error || 'Unknown error');
         saveTrimBtn.disabled = false;
         saveTrimBtn.textContent = 'Save Trim';
-        showToast('Trim timed out');
+        showToast('Trim failed');
         resolve();
         return;
       }
-      try {
-        const res = await fetch(`/api/jobs/${drawerJobId}/poll`);
-        const data = await res.json();
-        if (data.status === 'RENDERING') seenRendering = true;
-        diagLog('trim_poll', { job: drawerJobId, status: data.status, clip: clipId });
-        if (data.status === 'FAILED') {
-          clearInterval(timer);
-          trimStatus.textContent = 'Trim failed: ' + (data.error || 'Unknown error');
-          saveTrimBtn.disabled = false;
-          saveTrimBtn.textContent = 'Save Trim';
-          showToast('Trim failed');
-          resolve();
-          return;
-        }
-        // Ignore the initial COMPLETED (worker hasn't started yet); only
-        // finish once we saw RENDERING and the job returned to COMPLETED.
-        if (data.status === 'COMPLETED' && seenRendering) {
-          clearInterval(timer);
-          await refreshDrawerClip(clipId);
-          showToast('Clip trimmed & re-rendered!');
-          resolve();
-        }
-      } catch (e) { diagLog('trim_poll_error', { job: drawerJobId, err: String((e && e.message) || e) }); /* keep polling */ }
-    }, 1500);
+      // Ignore the initial COMPLETED (worker hasn't started yet); only
+      // finish once we saw RENDERING and the job returned to COMPLETED.
+      if (data.status === 'COMPLETED' && seenRendering) {
+        clearTimeout(capTimer);
+        watcher.stop();
+        await refreshDrawerClip(clipId);
+        showToast('Clip trimmed & re-rendered!');
+        resolve();
+      }
+    });
   });
 }
 
