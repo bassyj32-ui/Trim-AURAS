@@ -8,6 +8,8 @@ from pathlib import Path
 import httpx
 import yt_dlp
 
+from app.ssrf import validate_source_url
+
 WORKSPACE = Path("tmp") / "downloads"
 
 # Browser-like headers so Frame.io / GDrive don't block us

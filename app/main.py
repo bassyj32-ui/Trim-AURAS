@@ -1,4 +1,7 @@
-import sentry_sdk
+import logging
+import time
+from uuid import uuid4
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -6,13 +9,12 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes import router as api_router
 from app.config import settings
 from app.database import init_db
+from app.observability import bootstrap
 from app.recovery import start_recovery
 
-sentry_sdk.init(
-    dsn=settings.sentry_dsn,
-    send_default_pii=True,
-    traces_sample_rate=0.1,
-)
+bootstrap()
+
+_access_log = logging.getLogger("trimaura.access")
 
 app = FastAPI(title="TrimAURA", version="0.1.0")
 
@@ -55,6 +57,25 @@ async def security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     if (response.headers.get("content-type") or "").startswith("text/html"):
         response.headers["Content-Security-Policy"] = _CSP
+    return response
+
+
+@app.middleware("http")
+async def access_log(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or uuid4().hex[:8]
+    start = time.monotonic()
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    _access_log.info(
+        "request",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code,
+            "duration_ms": round((time.monotonic() - start) * 1000, 1),
+        },
+    )
     return response
 
 

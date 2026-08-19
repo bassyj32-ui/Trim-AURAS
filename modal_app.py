@@ -15,6 +15,7 @@ Deploy:
 from pathlib import Path
 
 import modal
+from sqlalchemy import text
 
 # ---------------------------------------------------------------------------
 # Persistent Volume — SQLite, clips, status files
@@ -136,6 +137,20 @@ def _ensure_path():
     for p in (cwd, os.path.join(cwd, "app")):
         if p not in sys.path:
             sys.path.insert(0, p)
+
+
+def _bootstrap():
+    """sys.path + structured JSON logging + Sentry for any worker container.
+
+    Sentry is per-process: pipeline workers never import app.main (which owns
+    the web container's init), so without this, worker failures would never
+    leave stderr. Safe to call everywhere — no-ops when Sentry is unset."""
+    _ensure_path()
+    from app.logging_conf import setup_logging
+    from app.observability import init_sentry
+
+    setup_logging()
+    init_sentry()
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +280,7 @@ _LIGHT_PIPELINE_KWARGS = dict(_PIPELINE_KWARGS, cpu=1.0)
 def process_pipeline(job_id: int, job_data: dict | None = None):
     _write_status(job_id, "DOWNLOADING", 10)
     try:
-        _ensure_path()
+        _bootstrap()
 
         from app.database import engine, init_db
 
@@ -362,7 +377,7 @@ def process_pipeline(job_id: int, job_data: dict | None = None):
 def process_generate_more(job_id: int, count: int = 3):
     _write_status(job_id, "ANALYZING", 40)
     try:
-        _ensure_path()
+        _bootstrap()
 
         import asyncio
 
@@ -391,7 +406,7 @@ def process_trim_clip(clip_id: int, new_start: float, new_end: float):
     """
     job_id = None
     try:
-        _ensure_path()
+        _bootstrap()
 
         from app.database import engine, init_db
 
@@ -681,6 +696,61 @@ def ass_burn_probe() -> str:
     except Exception as e:
         result += f"\n(volume write failed: {e})"
     return result
+
+
+# ===========================================================================
+# 3.5 Uptime monitor — every 5 min verify the app + DB are alive
+# ===========================================================================
+@app.function(
+    image=image,
+    secrets=[
+        modal.Secret.from_name("trimaura-secrets-v2"),
+        modal.Secret.from_name("trimaura-supabase-keys"),
+        modal.Secret.from_name("trimaura-db-url"),
+    ],
+    schedule=modal.Cron("*/5 * * * *"),
+)
+def health_check() -> str:
+    """Probe the deployed app's /health AND the database every 5 minutes.
+
+    On any failure it explicitly sends a Sentry event (alert rules can page
+    you) and raises so Modal logs the error. Pair with an external uptime
+    monitor (UptimeRobot etc.) for independence from Modal itself.
+    """
+    _bootstrap()
+    import httpx
+
+    from app.database import engine
+
+    problems = []
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:
+        problems.append(f"db: {exc}")
+
+    try:
+        try:
+            url = fastapi_app.get_web_url()
+        except Exception:
+            url = "https://bassyj32--trimaura-fastapi-app.modal.run"
+        resp = httpx.get(url + "/health", timeout=15)
+        if resp.status_code != 200:
+            problems.append(f"web: HTTP {resp.status_code}")
+    except Exception as exc:
+        problems.append(f"web: {exc}")
+
+    if problems:
+        try:
+            import sentry_sdk
+
+            sentry_sdk.capture_message(
+                "Uptime check failed: " + "; ".join(problems), level="error"
+            )
+        except Exception:
+            pass
+        raise RuntimeError("health_check failed: " + "; ".join(problems))
+    return "ok"
 
 
 # ===========================================================================

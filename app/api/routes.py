@@ -1007,12 +1007,16 @@ def get_vapid_public_key():
 
 
 @router.post("/push/subscribe", status_code=201)
-def subscribe_push(body: PushSubscribeRequest):
-    """Save a browser push subscription so terminal job states can notify it."""
+def subscribe_push(body: PushSubscribeRequest, user: dict = Depends(get_current_user)):
+    """Save a browser push subscription so the owner's terminal job states
+    can notify it. Auth-gated + owner-scoped (user_id is set on the row)."""
     keys = body.keys or {}
     with Session(engine) as session:
         existing = session.exec(
-            select(PushSubscription).where(PushSubscription.endpoint == body.endpoint)
+            select(PushSubscription).where(
+                PushSubscription.endpoint == body.endpoint,
+                PushSubscription.user_id == user["id"],
+            )
         ).first()
         if existing:
             existing.p256dh = keys.get("p256dh", "")
@@ -1021,6 +1025,7 @@ def subscribe_push(body: PushSubscribeRequest):
             session.commit()
             return {"status": "updated"}
         sub = PushSubscription(
+            user_id=user["id"],
             endpoint=body.endpoint,
             p256dh=keys.get("p256dh", ""),
             auth=keys.get("auth", ""),
@@ -1031,10 +1036,15 @@ def subscribe_push(body: PushSubscribeRequest):
 
 
 @router.delete("/push/subscribe")
-def unsubscribe_push(body: PushSubscribeRequest):
+def unsubscribe_push(body: PushSubscribeRequest, user: dict = Depends(get_current_user)):
+    """Remove the caller's subscription (owner-scoped — a user can only ever
+    delete their own endpoint, never another user's)."""
     with Session(engine) as session:
         sub = session.exec(
-            select(PushSubscription).where(PushSubscription.endpoint == body.endpoint)
+            select(PushSubscription).where(
+                PushSubscription.endpoint == body.endpoint,
+                PushSubscription.user_id == user["id"],
+            )
         ).first()
         if sub:
             session.delete(sub)

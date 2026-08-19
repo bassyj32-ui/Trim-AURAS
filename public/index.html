@@ -1672,6 +1672,11 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function enablePushNotifications() {
+  // Push subscriptions are owner-scoped server-side — require a session.
+  if (window.TrimAuraAuth && !window.TrimAuraAuth.getUser()) {
+    window.TrimAuraAuth.openAuth('Sign in to enable notifications');
+    return;
+  }
   if (!('Notification' in window) || !('PushManager' in window)) {
     showToast('Push notifications aren\u2019t supported on this browser');
     return;

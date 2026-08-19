@@ -1,5 +1,3 @@
-import pytest
-
 from app.failures import is_transient
 
 

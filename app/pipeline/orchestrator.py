@@ -167,33 +167,54 @@ async def _volume_commit():
 
 
 def _update_job(job_id: int, **kwargs):
+    owner = None
     with Session(engine) as session:
         job = session.get(Job, job_id)
         if job:
+            owner = job.user_id
             for k, v in kwargs.items():
                 setattr(job, k, v)
             session.add(job)
             session.commit()
-    # Fire push notifications for terminal states (fire-and-forget)
+
     status = kwargs.get("status")
+    if status == JobStatus.FAILED:
+        # Alertable Sentry event so a dead pipeline surfaces without watching
+        # the dashboard (alert rules key off the job_id/stage tags).
+        try:
+            from app.observability import capture_job_failure
+
+            capture_job_failure(
+                job_id,
+                _ACTIVE_STAGE.get(job_id, "UNKNOWN"),
+                str(kwargs.get("error_message") or "unknown"),
+            )
+        except Exception:
+            pass
+
+    # Fire push notifications for terminal states (fire-and-forget)
     if status in (JobStatus.COMPLETED, JobStatus.FAILED):
-        _notify_terminal(status, kwargs.get("error_message"))
+        _notify_terminal(status, kwargs.get("error_message"), owner)
 
 
-def _notify_terminal(status: str, error: str | None = None):
+def _notify_terminal(status: str, error: str | None = None, user_id: str | None = None):
     """Push a notification when a job finishes or fails, so the user can
-    deploy the clips from their phone without watching the page."""
+    deploy the clips from their phone without watching the page. Targeted to
+    the job owner only (notify_user), never a platform-wide broadcast."""
     try:
-        from app.push import notify_all
+        from app.push import notify_user
 
+        owner = user_id or ""
         if status == JobStatus.COMPLETED:
-            notify_all(
+            notify_user(
+                owner,
                 "TrimAURA — Ready ✅",
                 "Your shorts are done. Open the app to review & deploy.",
                 data={"jobDone": True},
             )
         elif status == JobStatus.FAILED:
-            notify_all(
+            notify_user(
+                owner,
                 "TrimAURA — Failed ❌",
                 f"Processing error: {(error or 'Unknown error')[:140]}",
                 data={"jobDone": True},
@@ -491,7 +512,7 @@ async def execute_pipeline(job_id: int):
                 db_job.progress_percentage = 100
                 session.add(db_job)
                 session.commit()
-                _notify_terminal(JobStatus.COMPLETED)
+                _notify_terminal(JobStatus.COMPLETED, user_id=db_job.user_id)
 
         _diag(job_id, "COMPLETED", clips_count=len(rendered_paths))
 

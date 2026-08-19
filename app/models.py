@@ -63,8 +63,13 @@ class VideoClip(SQLModel, table=True):
 
 
 class PushSubscription(SQLModel, table=True):
-    """A browser PWA push subscription (endpoint + ECDH keys)."""
+    """A browser PWA push subscription (endpoint + ECDH keys), owned by a user.
+
+    ``user_id`` scopes rows per account (RLS + API both key off it) so a
+    job's terminal push reaches only the job's owner.
+    """
     id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(default="", index=True)
     endpoint: str = Field(unique=True, index=True)
     p256dh: str = ""
     auth: str = ""
