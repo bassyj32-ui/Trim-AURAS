@@ -1,7 +1,7 @@
 # TrimAURA — Build Plan & Roadmap
 
-> **Last updated:** 2026-08-07
-> **Status:** 🟢 V1 live on Modal — Warm cream UI, scale-to-zero, Whisper Turbo, Supabase Postgres, Frame.io GraphQL downloader, quality selector (1080p default), Publish Kit (TikTok/Shorts/Reels), FFmpeg "sight" signals, content-aware clip selection (speech/action/music), any-source downloads via yt-dlp (TikTok, Instagram, Google Drive; YouTube temporarily disabled), optional cookies.txt upload (fixes YouTube "not a bot" blocks on cloud IPs), clean clips (no burned text) with genre-distinct template overlay frames, optional Opus-style animated burned captions (per-job toggle, **PlayRes fix in 7.48**), silence/filler trimming + per-clip trim & re-render, face-aware animated crop (speaker tracking, auto with static fallback), clip viewer page + copy-link (hosted playback/seek via FileResponse Range), PWA + push notifications, stress-tested (3/3 back-to-back, ~6 min/job)
+> **Last updated:** 2026-08-20
+> **Status:** 🟢 V1 live on Modal — Warm cream UI, scale-to-zero, Whisper Turbo, Supabase Postgres, Frame.io GraphQL downloader, quality selector (1080p default), Publish Kit (TikTok/Shorts/Reels), FFmpeg "sight" signals, content-aware clip selection (speech/action/music), any-source downloads via yt-dlp (TikTok, Instagram, Google Drive; YouTube temporarily disabled), optional cookies.txt upload (fixes YouTube "not a bot" blocks on cloud IPs), clean clips (no burned text) with genre-distinct template overlay frames, optional Opus-style animated burned captions (per-job toggle, **PlayRes fix in 7.48**), silence/filler trimming + per-clip trim & re-render, face-aware animated crop (speaker tracking, auto with static fallback), clip viewer page + copy-link (hosted playback/seek via FileResponse Range), PWA + push notifications, stress-tested (3/3 back-to-back, ~6 min/job), Supabase Auth (Google OAuth + magic-link email sign-in), abuse gate (email allowlist, now open), admin dashboard, Dodo Payments (test-mode live) + permanent credits wallet, quotas (concurrency/credits/burst) + DB-backed per-IP rate limit, RLS deny-all on backend tables, UptimeRobot external monitor
 > **URL:** <https://bassyj32--trimaura-fastapi-app.modal.run>
 
 ***
@@ -12,21 +12,26 @@
 trimaura/
 ├── app/
 │   ├── __init__.py              # Package init
-│   ├── main.py                  # FastAPI app & static mounting
-│   ├── config.py                # Pydantic Settings & environment validation
+│   ├── main.py                  # FastAPI app & static mounting (+ IP rate-limit middleware)
+│   ├── config.py                # Pydantic Settings & env validation (APPROVED_EMAILS, ADMIN_EMAILS, ip_rate_per_minute, DODO_*)
 │   ├── database.py              # SQLModel engine — Supabase Postgres pooler on Modal, local fallback
-│   ├── models.py                # SQLModel schema (Job, VideoClip, clip vault)
+│   ├── models.py                # SQLModel schema (Job, VideoClip, UserTier, MonthlyUsage, Payment, QuotaUsage)
+│   ├── auth.py                  # Supabase JWT verification + email allowlist gate (get_current_user)
+│   ├── quotas.py                # Per-tier quotas: concurrency, 24h job cap, monthly credits, clip caps, burst
+│   ├── ratelimit.py             # DB-backed per-IP rate limit (QuotaUsage, 1-min windows)
+│   ├── dodo.py                  # Dodo Payments: checkout creation + webhook verification (MoR, USDT)
 │   ├── storage.py               # Cloudflare R2 upload helpers (DISABLED)
 │   │
 │   ├── api/
-│   │   ├── routes.py            # REST endpoints (Jobs, Upload, Clip Vault, Posted, Download)
+│   │   ├── routes.py            # REST endpoints (Jobs, Upload, Clip Vault, Posted, Download, Admin, Checkout)
 │   │   └── sse.py              # SSE stream helper (legacy, unused)
 │   │
 │   └── pipeline/
 │       ├── orchestrator.py      # Pipeline controller with clip vault features
-│       ├── downloader.py        # Phase 1: any http(s) link via yt-dlp (YouTube, TikTok, Instagram, GDrive) + Frame.io GraphQL + local uploads
+│       ├── downloader.py        # Phase 1: any http(s) link via yt-dlp (TikTok, Instagram, GDrive) + Frame.io GraphQL + local uploads (YouTube blocked)
 │       ├── transcriber.py      # Phase 2: Groq Whisper V3 Turbo (with Tenacity retry)
 │       ├── intelligence.py     # Phase 3: DeepSeek viral moment extractor + FFmpeg "sight" signals + content-aware routing (speech/action/music)
+│       ├── face_track.py       # Face detection (MediaPipe → OpenCV Haar fallback) for animated crop
 │       ├── video_editor.py     # Phase 4: FFmpeg template applier & renderer
 │       └── seo_generator.py    # Phase 5: DeepSeek SEO title & hashtag builder
 │
@@ -45,11 +50,13 @@ trimaura/
 │   └── seo_generation.txt      # DeepSeek SEO generation prompt
 │
 ├── public/
-│   ├── index.html              # PWA frontend (warm cream design, publish kit, quality selector)
+│   ├── index.html              # PWA frontend (warm cream design, publish kit, quality selector, magic-link form)
+│   ├── admin.html              # Admin dashboard (overview, users, jobs, credit/tier actions — require_admin)
+│   ├── clip.html               # Standalone clip player (hosted playback via Range)
 │   ├── styles.css              # CSS design system
 │   ├── manifest.json           # Web App Manifest
 │   ├── service-worker.js       # Cache-first service worker (⚠ refresh after deploys; cache v11 precaches auth.js)
-│   ├── auth.js                 # Supabase Google OAuth — modal, account chip, fetch/XHR token injection, 401 refresh-retry (Phase 7.50)
+│   ├── auth.js                 # Supabase auth (Google OAuth + magic link) — modal, account chip, fetch/XHR token injection, 401 refresh-retry, 403 invite-only sign-out
 │   └── template-previews/      # Lightweight JPEG template previews
 │
 ├── modal_app.py                # Modal cloud deployment
@@ -228,6 +235,12 @@ trimaura/
 | 7.49 | Full x1.md QA matrix + upload-limit investigation | ✅ | **(a) QA matrix vs live Modal API (jobs 109–153).** 23 labeled rows (`scripts/qa_matrix_run.py`, evidence in `tmp/qa/results.jsonl`) + concurrency (`qa_concurrency.py`), generate-more (`qa_generate_more.py`), upload ceiling (`qa_upload_ceiling.py`/`qa_follow_redirect.py`). Findings: **13/13 completed jobs valid** — every clip probes 1080×1920 H.264+AAC, downloadable, byte-exact sizes; settings verified via **per-render unique stderr logs** (`video_editor.py` `_next_render_run_id()`; second `# ` header line = full `-filter_complex`): `burn_captions` on ⇔ `subtitles=` present (4/4), `trim_silence` on ⇔ `atrim=` segments (3/3, e.g. `atrim=7.9:12.64,16.38:21.5` → clip 164 exactly 9.867s); generate-more: job 109 1→2 clips, no dupes, state persists; concurrency: no app-state corruption (transport failures only). Deterministic content-failure root causes (NOT bugs): 4K HEVC → `clip_candidates: 0` at ANALYZING; silent WebM → ffmpeg exit 234 at TRANSCRIBING; w3.org direct URLs → 403 datacenter-IP block; Vimeo → yt-dlp OAuth 401. New diag surface: `GET /api/jobs/{id}/diag` (per-stage events + tracebacks). **(b) Upload-limit investigation (see task file; evidence `tmp/qa/upload_boundary*.jsonl`).** The "~50MB ceiling" is **NOT a fixed byte limit** — it's a mix of (i) the frontend misreading Modal's normal large-body protocol, and (ii) a slow/variable link. Modal's gateway answers large bodies with `303 + Location?__modal_attempt_token=…` (docs: bodies up to **4 GiB**) and the client must re-POST to the Location; the XHR treated any non-2xx as failure ("Upload failed (303)") while the Job was actually created and **COMPLETED** server-side (jobs 146/147 under 303 → COMPLETED). Boundary sweep: 40/49/50MB → 202 OK; 45/47/60MB → 303 (45/47 still created+completed jobs); 60MB with retry → `500 upstream request timeout` at 798s while **70MB with retry → 202 in 145s** — identical-class sizes, opposite outcomes → **time/network-dependent** (Modal gateway ~13-min upload budget on this ~75–500KB/s link). **Fix (cheap, frontend-only, `public/index.html`)**: on `xhr.status === 303`, re-POST the same FormData to the `Location` with `fetch(redirect:'manual')` (prevents the browser 303→GET body-drop; Modal's token dedupes — no duplicate jobs, verified 45MB→202 and 70MB→202 single job each) + a >47MB warning toast ("recommended input: H.264 MP4 under ~40 MB"). **No infra changes** — R2/chunked uploads explicitly deferred (NOT worth it for an internal tool). **Operating limit: keep uploads ≤40MB for now**; 45–70MB works when the link is healthy |
 
 | 7.50 | Supabase Auth (Google OAuth) + multi-tenancy — LIVE | ✅ | Full per-user system shipped (commits `ec33113` auth / `5f0637d` UX fixes / `d18aa92` docs, deployed **2026-08-11**). **Backend** — new `app/auth.py` exposes `get_current_user` (`Depends()` on every protected route): Bearer JWT verified server-side via `supabase.auth.get_user(token)` (lazy client, safe import), 401 on missing/invalid. Jobs & clips are created with `user_id = user["id"]`; `list_jobs`/`list_clips` return only the caller's rows; `_owned_job`/`_owned_clip` return 404 for foreign rows (no existence leak); `POST /api/claim-legacy` (idempotent, localStorage-guarded `trimaura_claimed_<userId>`) claims the 88 legacy `default` rows on first sign-in. **RLS defense-in-depth** — `supabase/migrations/add_auth_rls.sql` enables ROW LEVEL SECURITY on `job`/`videoclip`/`pushsubscription` with `auth.uid()` policies (`videoclip` via `EXISTS (SELECT 1 FROM job WHERE job.id = videoclip.job_id AND job.user_id = auth.uid()::text)`; `pushsubscription` intentionally policy-less). Verified live: anon-key REST `GET /rest/v1/job` and `/rest/v1/videoclip` both return `[]`; `pg_policy` lists the policies. (The Modal backend's superuser connection bypasses RLS, so the JWT gate is the primary enforcement.) **Frontend** — `public/auth.js` (`window.TrimAuraAuth`): Google sign-in modal, account chip (avatar/name/sign-out), monkey-patched `fetch` + `XMLHttpRequest` inject `Authorization` from the `sb-jbnbjsdralphdbjcwukf-auth-token` localStorage key (guest writes get a synthetic 401 + modal, no network). Race & UX fixes (`5f0637d`): `syncTokenFromStorage()` reads the token synchronously at boot (kills the first-request 401 race); `auth401()` silently refreshes the session + retries once, only opening the "Session expired — please sign in again" modal if refresh genuinely fails (`signOutQuietly`); `loadHistory()` renders a 🔐 "Sign in to see your clips" CTA on 401 instead of the false "Could not reach the server" error; SW cache v10→v11 precaches `/auth.js`. **OAuth config** — Google Cloud OAuth client: Authorized redirect URI = `https://bassyj32--trimaura-fastapi-app.modal.run`; Supabase dashboard Site URL + Redirect URL allow list = the same modal.run URL (provider verified live via the authorize redirect). **Deployment** — image adds `supabase>=2.10.0`; Modal secrets `trimaura-secrets-v2` / `trimaura-supabase-keys` / `trimaura-db-url`; live `GET /api/jobs` returns **401** without a token (auth enforced), `/` and `/auth.js` 200. **Data ownership correction** — all 88 jobs / 182 clips moved to admin `bassyjmin@gmail.com` (`UPDATE public.job SET user_id = 'd3e37376-2a64-4dfa-a184-701c67c2e206' WHERE user_id IN ('7b5a4339-dcd0-47b9-ae89-e94b2ea11baf','default')`); zero rows left on `default`; `auth.users` now has exactly 2 accounts |
+| 7.51 | Dodo Payments + permanent credits wallet + SQLModel table alignment (2026-08-19) | ✅ | **Billing shipped — Stripe is dead.** Stripe doesn't work in Ethiopia (no payouts); Dodo Payments (merchant-of-record, USDT payouts) is the billing layer. `7dfb314`: top-up minutes are **permanent** (`UserTier.permanent_credits` wallet — "Yours forever", never expire). `0294381`: aligned credit/tier tables to SQLModel lowercase names (`usertier`/`monthlyusage`; hand-written migrations had created unused `user_tiers`/`monthly_usage` duplicates → dropped + backfilled `permanent_credits` from legacy `topup_credits`). Hosted checkout stripped to minimum (no promo/phone/tax-ID, USD locked, contact pre-filled, `redirect_immediately`; zipcode stays — card AVS requirement). **Test mode proven end-to-end**: real purchase `payment` id=13 `succeeded` → +250 permanent credits → wallet 310 (60 free + 250 bought); idempotent webhooks (`session_id` UNIQUE → retries can't double-grant). Live flip = boss dashboard steps only (see §What's Left below) |
+| 7.52 | Admin dashboard + quotas/credits enforcement (2026-08-19) | ✅ | `f1aa2f0`: **admin dashboard** (`public/admin.html`) — overview stats, users, jobs, credit grant + tier actions, cleanup, all behind `require_admin` (gated by `ADMIN_EMAILS`). `app/quotas.py` (shipped with the billing/admin work): per-tier enforcement at job creation — max concurrent non-terminal jobs (free=1/starter=2/pro=4), max jobs per rolling 24h, **monthly credits = source minutes** (the real cost driver; 60 min free/mo, top-ups permanent), max source minutes per job, max total clips per job, max clips per generate-more call, burst cap on expensive writes per minute. PWA surfaces remaining credits on the top-up card |
+| 7.53 | Abuse gate — email allowlist + admin emails (2026-08-19) | ✅ | `01ed323`: new `APPROVED_EMAILS` setting — when **non-empty**, any unapproved email gets **403 "Access by invite only"** on every API call (gate inside `get_current_user`, after JWT check) while still being able to sign up; also fixed the **latent `ADMIN_EMAILS` AttributeError** (referenced by `/api/credits/topup` but never declared — would have crashed). **Re-opened 2026-08-20**: `.env`/Modal secret now `APPROVED_EMAILS=""` → anyone can sign in (repo is private, link not discoverable); `ADMIN_EMAILS` stays locked to `vitamerina@gmail.com,bassyjmin@gmail.com`. Frontend `auth.js` handles the 403: unapproved users get signed out + "invite only" message (fetch AND XHR paths) |
+| 7.54 | usertier.email column + locked trigger + RLS deny-all on backend tables (2026-08-19) | ✅ | `023af90`: `usertier.email` column (auto-filled from `auth.users` via `trg_usertier_set_email` BEFORE INSERT trigger + backfill) so the admin dashboard shows who owns which account/tier. `70a3cdb`: trigger hardened with `SET search_path = ''` (security-advisor warning). `00abc6f`: **RLS enabled (deny-all, zero policies) on `usertier`/`monthlyusage`/`payment`/`quotausage`** — the frontend never queries these via Supabase REST (verified: zero `.from()` calls), the Modal backend connects as the postgres role (bypasses RLS), so deny-all is safe. (Note: `job`/`videoclip`/`pushsubscription` already had per-user RLS from 7.50.) |
+| 7.55 | DB-backed per-IP rate limit + magic-link email sign-in (2026-08-19) | ✅ | `8dc9bb2`: **rate limit** — new `app/ratelimit.py` `check_ip_rate()` + `@app.middleware("http")` on every `/api/*`: 1-minute windows stored in `QuotaUsage` keyed `user_id="ip:<addr>"` (action="api"), default **240 req/min** (`config.ip_rate_per_minute`), 429 + `Retry-After` on exceed, stale-row pruning >24h. Correct on Modal scale-to-zero (no in-memory state). **Magic link** — `auth.js` `signInWithMagicLink(email)` via Supabase `signInWithOtp` + `emailRedirectTo`; "Email me a sign-in link" form in the auth modal (works on devices without Google). ⚠️ Requires ONE dashboard toggle (Supabase → Auth → Providers → **Email**) — deferred by the boss (see §What's Left) |
+| 7.56 | Ops hardening + docs (2026-08-20) | ✅ | **UptimeRobot external monitor** added on `/health` (in-app 5-min cron already pings `/health` + DB probe from `modal_app.py`; UptimeRobot covers the chicken-and-egg case where the cron itself can't fire). PIPELINE_ANALYSIS.md created (Part 1 strategic + Part 2 verified code-level deep dive, commits `f34ac16`/`3042c14`). Verified live: `/health` → `{"status":"ok"}` |
 
 **Known limitations (V1):**
 - YouTube downloads from Modal's cloud IPs are blocked by Google's bot check ("Sign in to confirm you're not a bot") — even with cookies, Chrome impersonation, and a PO-token provider. Works from residential IPs; a residential proxy would unblock it (deferred, see 7.33)
@@ -238,31 +251,31 @@ trimaura/
 
 ***
 
-## 📊 Readiness Audit — 2026-08-11
+## 📊 Readiness Audit — 2026-08-20 (supersedes 08-11)
 
-> Verdict: **7.5/10** — already in real use (auth + admin account live on Modal). The core is production-grade; the edges (YouTube, security, scale) are what stand between "my tool" and "their tool". See the upgrade backlog below.
+> Verdict: **8.5/10** — auth, money, and the abuse layer are all live and proven. The only hard gap left for onboarding others is **YouTube** (platform coverage) and the **Dodo live flip** (boss dashboard task, not code). See the backlog below.
 
 | Area                     | Score | Why                                                                                                                                                       |
 | ------------------------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Core pipeline (download → clips) | **9/10** | QA matrix 13/13 valid, concurrency + generate-more tested, settings verified via per-render stderr. Genuinely solid.                                      |
-| UI/UX + PWA              | **9/10** | Phone-tested, push notifications, publish kit, clip viewer, auth modal/chip. Polished.                                                                    |
-| Auth & data isolation    | **8/10** | Google OAuth + JWT gate + RLS verified live. Missing: email/password option, roles, admin view.                                                          |
-| Reliability & observability | **8/10** | Sentry + diag endpoints + stderr logs. But polling (no queue), no auto-retry/backoff, no uptime monitor.                                                  |
+| UI/UX + PWA              | **9/10** | Phone-tested, push notifications, publish kit, trim bar + template previews, auth modal/chip. Polished.                                                    |
+| Auth & data isolation    | **9/10** | Google OAuth + magic-link email + JWT gate + per-user RLS verified live + admin dashboard. Only Email provider toggle pending (Supabase dashboard).        |
+| Reliability & observability | **9/10** | Sentry + diag endpoints + stderr logs + Modal retries/recovery sweep + in-app 5-min health cron + UptimeRobot external monitor. Polling retained by design.|
 | Platform coverage        | **6/10** | YouTube blocked from Modal's cloud IPs (bot check) — biggest gap for a clipping tool. TikTok/IG need cookies.txt. Frame.io/GDrive/direct links great.      |
-| Security (SaaS-grade)    | **5/10** | No rate limiting, no abuse protection, no billing, `pushsubscription` table intentionally policy-less. Fine solo, risky for open signup.                  |
+| Security (SaaS-grade)    | **9/10** | Rate limiting (per-IP 240/min) + quotas (concurrency/credits/burst) + email allowlist gate + RLS deny-all on backend tables + Dodo billing.               |
 | Scale                    | **5/10** | Perfect for a handful of users; polling + single region + Modal free tier creaks past ~50 active users.                                                   |
 
 ### Upgrade backlog (work later — ordered by impact for onboarding others)
 
-| # | Task                                                              | Lifts                        | Notes                                                        |
-| - | ----------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------ |
-| 1 | YouTube unblock via residential proxy                             | Platform coverage 6→9        | Deferred in 7.33; most creators' source video is YouTube      |
-| 2 | Rate limiting + abuse guard (per-user quotas on job/clip creation)| Security 5→8                 | Prevents strangers from DoS-ing the Modal endpoint            |
-| 3 | Invite-gating or billing (Stripe metered)                         | Security 5→8, Scale          | So other users don't burn your compute; Phase 8 billing plan exists |
-| 4 | Job queue + auto-retry/backoff + uptime monitor                   | Reliability 8→9              | Replace 2s polling; cron `/health` ping every 5 min           |
-| 5 | Email/password auth + roles + admin view                          | Auth 8→9                     | Supabase email/OTP is supported out of the box                |
-| 6 | `pushsubscription` RLS policy + stale-row cleanup                 | Security                     | Policy-less by design (7.50) — revisit before open signup     |
-| 7 | Multi-region / proper job queue for scale                         | Scale 5→7                    | Only needed once users > ~50                                  |
+| # | Task                                                              | Lifts                        | Status / Notes                                              |
+| - | ----------------------------------------------------------------- | ---------------------------- | ----------------------------------------------------------- |
+| 1 | YouTube unblock via residential proxy                             | Platform coverage 6→9        | **OPEN** — the one real gap. Deferred in 7.33; cookies + PO-token not enough on Modal IPs |
+| 2 | Rate limiting + abuse guard (per-user quotas on job/clip creation)| Security 5→8                 | ✅ DONE — 7.55 per-IP rate limit + 7.52 quotas + 7.53 allowlist |
+| 3 | Invite-gating or billing (Stripe metered)                         | Security 5→8, Scale          | ✅ DONE (as Dodo) — 7.51 billing + credits wallet; live flip pending (boss) |
+| 4 | Job queue + auto-retry/backoff + uptime monitor                   | Reliability 8→9              | ✅ DONE — Modal retries=1 + recovery sweep + in-app cron + UptimeRobot |
+| 5 | Email/password auth + roles + admin view                          | Auth 8→9                     | ✅ DONE — 7.55 magic link + 7.52 admin dashboard; Email provider toggle pending |
+| 6 | `pushsubscription` RLS policy + stale-row cleanup                 | Security                     | ✅ DONE — per-user policies since 7.50 (add_push_user_id.sql) |
+| 7 | Multi-region / proper job queue for scale                         | Scale 5→7                    | Still FUTURE — only needed once users > ~50                  |
 
 ***
 
@@ -285,7 +298,7 @@ Ranked by ROI for the current solo/gaming workflow. Not scheduled.
 
 ## 🚀 Phase 8 — Scaling for Thousands of Users
 
-**Status:** 🔄 IN PROGRESS — Auth & Multi-Tenancy P0 shipped LIVE (Phase 7.50); queue, billing, and CDN items below are still planned
+**Status:** 🔄 IN PROGRESS — Auth, billing (Dodo, test-mode live), quotas, admin dashboard, and monitoring shipped (7.50–7.56). Remaining planned: Dodo live flip, YouTube proxy, proper queue/CDN only at scale.
 
 This phase is what turns TrimAURA from a personal tool into a SaaS product serving 1000s of creators.
 
@@ -294,8 +307,10 @@ This phase is what turns TrimAURA from a personal tool into a SaaS product servi
 | Priority | Feature                                    | Status                                      | Why                                            |
 | -------- | ------------------------------------------ | ------------------------------------------- | ---------------------------------------------- |
 | 🔴 P0    | User auth (Google OAuth)                   | ✅ LIVE (2026-08-11, Phase 7.50)             | Each user needs isolated jobs, clips, settings |
+| 🟡 P1    | Email/OTP (magic link) sign-in             | ✅ Built (7.55) — needs Supabase Email provider toggle (deferred) | Devices without Google |
 | 🔴 P0    | User ↔ Job relationship in models          | ✅ LIVE — `Job.user_id` + `_owned_*` helpers | `Job.user_id` foreign key                      |
 | 🔴 P0    | Per-user clip vault                        | ✅ LIVE — auth-filtered list_jobs/list_clips | Users see only their own clips                 |
+| 🔴 P0    | Admin dashboard (users/jobs/credits/tiers) | ✅ LIVE (7.52) — `public/admin.html` + `require_admin` | Owner-only ops, gated by `ADMIN_EMAILS` |
 | 🟡 P1    | Team / workspace support                   | 📋 FUTURE                                   | Agencies managing multiple clients             |
 
 ### Database — SQLite → PostgreSQL
@@ -313,17 +328,20 @@ This phase is what turns TrimAURA from a personal tool into a SaaS product servi
 | Current                 | Future                                                           |
 | ----------------------- | ---------------------------------------------------------------- |
 | Frontend polls every 2s | **Redis + Celery** or **Modal Task Queue** for real-time updates |
-| No retry on failure     | Automatic retry with exponential backoff                         |
+| Modal `spawn.aio()` + `retries=1` + recovery sweep (7.55 era) | Automatic retry with exponential backoff, dead-letter queue      |
 | No priority             | Priority queue for paying users                                  |
+
+> ✅ Already in place (08-19): Modal function retries + transient-failure re-queue + recovery sweep + per-job diag logs. A real queue (Redis/Celery) is only worth it past ~50 concurrent users — defer.
 
 ### Billing
 
 | Feature                        | Implementation                                     |
 | ------------------------------ | -------------------------------------------------- |
-| Usage-based pricing (per clip) | **Stripe** metered billing                         |
-| Free tier: 10 clips/month      | Track usage in `User.clips_generated` counter      |
-| Paid tiers: unlimited          | Webhook on payment success → update user tier      |
-| Cost control                   | `max_clips` slider already implemented in frontend |
+| Usage-based pricing (per clip) | **Dodo Payments** hosted checkout (MoR, USDT payouts) — Stripe doesn't work in Ethiopia |
+| Free tier: 60 min/mo credits   | Tracked in `monthlyusage` (source minutes, the real cost driver) |
+| Paid tiers + top-ups           | Starter $4.99 / Pro $9.99 / Topup-250 $4.99 / Topup-500 $9.99 — credits are **permanent** (`permanent_credits` wallet, never expire) |
+| Cost control                   | `max_clips` slider + per-tier quotas (concurrency/24h/clip caps) in `app/quotas.py` |
+| Status                        | ✅ **Test mode live + proven** (real purchase id=13). Live flip = boss dashboard steps (see §What's Left) |
 
 ### CDN & Storage
 
@@ -340,7 +358,7 @@ This phase is what turns TrimAURA from a personal tool into a SaaS product servi
 | **Modal logs**        | Pipeline execution, errors, timing    |
 | **Sentry**            | Error tracking across all users       |
 | **Datadog / Grafana** | CPU, memory, API latency, queue depth |
-| **Uptime monitoring** | Cron job pings `/health` every 5 min  |
+| **Uptime monitoring** | ✅ In-app cron pings `/health` every 5 min (7.56) + **UptimeRobot external monitor** on `/health` (8-20) |
 
 ### Estimated Infrastructure Cost (1000 users, 5000 clips/month)
 
@@ -349,7 +367,7 @@ This phase is what turns TrimAURA from a personal tool into a SaaS product servi
 | Modal compute         | \~$50-100             | FFmpeg renders are the main cost |
 | Supabase (PostgreSQL) | $25                   | Free tier works for MVP          |
 | Cloudflare R2         | $5-10                 | Egress + storage, very cheap     |
-| Stripe                | 2.9% + $0.30/txn      | Transaction fees                 |
+| Dodo (MoR)            | Fee on transactions   | Merchant-of-record fee (see Dodo dashboard) |
 | Sentry                | Free (developer tier) | Error monitoring                 |
 | **Total**             | **\~$100-150/mo**     | Before revenue                   |
 
@@ -396,7 +414,7 @@ This phase is what turns TrimAURA from a personal tool into a SaaS product servi
 | Modal keep-warm (auto-scale)  | $20              | Multiple containers   |
 | PostgreSQL (Supabase)         | $25              | Free tier on old plan |
 | Cloudflare R2 (fixed by then) | $10              | CDN + storage         |
-| Stripe fees                   | 2.9% + $0.30/txn | Only if monetizing    |
+| Dodo fees                   | MoR fee per txn  | Only when monetizing  |
 | Monitoring (Sentry free)      | $0               | Developer tier        |
 | **Total**                     | **\~$50-100/mo** | Before revenue        |
 
@@ -409,7 +427,7 @@ This phase is what turns TrimAURA from a personal tool into a SaaS product servi
 | PostgreSQL (Supabase Pro)    | $50               | Team plan                |
 | Cloudflare R2 CDN            | $50               | Egress + storage         |
 | Redis queue                  | $20               | Job queue                |
-| Stripe fees                  | 2.9% + $0.30/txn  | Only if monetizing       |
+| Dodo fees                    | MoR fee per txn  | Only when monetizing     |
 | Monitoring (Datadog/Grafana) | $50               | Optional                 |
 | **Total**                    | **\~$400-600/mo** | Before revenue           |
 
@@ -482,7 +500,8 @@ Total effort: **\~2 hours.** After that, your clips will be 80-90% of Opus quali
 | Cloudflare R2 TLS cert not provisioned     | 🔴 BLOCKED      | Clips stored on Modal Volume, served via API download. Probe with `python scripts/probe_r2.py` |
 | `generate_more` no longer needs R2         | ✅ FIXED        | Source resolved R2 → Volume cache → re-download; verified live (job 32 → clip 55, 27 MB, HTTP 200) |
 | PWA serves stale shell after deploys       | ✅ FIXED        | Service worker cache — reinstall/reload PWA to see new UI |
-| No user auth (single-user)                 | 🟡 OK for MVP   | Add auth before onboarding others                     |
+| Google OAuth works; magic-link email needs Supabase Email provider toggle | 🔄 ONE dashboard toggle | Supabase → Auth → Providers → Email → enable (deferred 08-20; Google OAuth works now) |
+| YouTube blocked on Modal IPs                | 🔴 OPEN            | Works from residential IPs; real fix = residential proxy (see 7.33)                    |
 | Supabase transaction pool may timeout      | 🟡 OK for MVP   | Modal process_pipeline has 3600s timeout              |
 | Volume reload on cold start                | ✅ FIXED        | `data_volume.reload()` added to download endpoint     |
 | PWA blank screen on mobile CSS fix         | ✅ FIXED        | `.frame-wrapper{display:block}` deployed              |
@@ -513,6 +532,13 @@ python dev_server.py
 ***
 
 ## 🔄 What's Left — Dodo Payments & SaaS Flip (2026-08-19)
+
+### ✅ Closed since this section was written (2026-08-20)
+- **Open signup** — abuse gate re-opened: `APPROVED_EMAILS=""` (anyone can sign in; repo is private so the link isn't discoverable). `ADMIN_EMAILS` stays locked to the two admin accounts.
+- **IP rate limit** — DB-backed 240/min per IP on all `/api/*` (7.55).
+- **Magic-link email sign-in** — built client-side (7.55); only needs the Supabase Email provider toggle.
+- **RLS deny-all on backend tables** — `usertier`/`monthlyusage`/`payment`/`quotausage` (7.54).
+- **UptimeRobot external monitor** — on `/health`, alongside the in-app 5-min cron (7.56).
 
 ### ✅ Status snapshot (verified live)
 - **Dodo Payments integrated** — hosted checkout replaces Stripe (Stripe doesn't work in Ethiopia; payouts arrive in USDT). Test mode is live end-to-end.
