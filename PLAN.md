@@ -533,6 +533,7 @@ python dev_server.py
 ### 📄 SaaS non-negotiables
 - **Privacy Policy + Terms of Service pages** — Dodo requires them on checkout/business before live.
 - **Confirm free-tier limits** for new signups (currently 60 min/mo free; decide if that stays).
+- **No landing/marketing page** — decided 2026-08-20: the app is invite/direct-link driven, not advertised. Don't build one. (Optional later: a one-page `/contact` with an email link, only when real users exist.)
 
 ### 🎯 Internal clip-farming gaps (optional, decide ROI)
 - **Batch queue** — currently one URL at a time; want N URLs processed overnight.
