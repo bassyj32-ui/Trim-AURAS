@@ -1,0 +1,10 @@
+# Dev / CI dependencies. Runtime deps live in requirements.txt.
+#
+# The suite runs against an in-memory SQLite fixture (tests/conftest.py) and
+# mocks Groq, DeepSeek, ffmpeg and Modal, so it needs no database, no API keys
+# and no GPU. httpx is already pinned in requirements.txt and is not repeated.
+#
+# Versions match what the suite is verified green on locally.
+pytest==9.1.1
+pytest-asyncio==1.4.0
+ruff==0.16.3

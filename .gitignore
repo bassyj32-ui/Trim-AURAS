@@ -59,3 +59,11 @@ r2_test_output.txt
 templates.json
 test_source_*.mp4
 tmppsnr_*.txt
+x*.md
+
+# Local AI-assistant workflow config. Personal tooling, not product code —
+# kept on disk for the owner's own use and intentionally untracked so it does
+# not read as repo content. Nothing in app/, scripts/ or the build references it.
+.opencode/
+.agents/
+skills-lock.json
