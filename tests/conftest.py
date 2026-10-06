@@ -29,6 +29,14 @@ import app.quotas as quotas_module
 from app.main import app
 from app.models import Job, JobStatus, VideoClip
 import app.main as main_module
+# These four also do `from app.database import engine`, which binds the name
+# into their own namespace at import time. Without patching them here they keep
+# a reference to the real Postgres engine and the test suite tries to reach
+# localhost:5432 instead of the in-memory SQLite fixture.
+import app.api.sse as sse_module
+import app.dodo as dodo_module
+import app.ratelimit as ratelimit_module
+import app.recovery as recovery_module
 
 
 @pytest.fixture(scope="session")
@@ -58,7 +66,7 @@ def session(test_engine):
 
 @pytest.fixture(scope="function", autouse=True)
 def patch_engine(test_engine, monkeypatch):
-    for mod in (db_module, orch_module, tr_module, int_module, ve_module, seo_module, ft_module, storage_module, push_module, quotas_module, main_module):
+    for mod in (db_module, orch_module, tr_module, int_module, ve_module, seo_module, ft_module, storage_module, push_module, quotas_module, main_module, sse_module, dodo_module, ratelimit_module, recovery_module):
         if hasattr(mod, "engine"):
             monkeypatch.setattr(mod, "engine", test_engine)
     # Also patch the routes module which imports engine directly

@@ -21,3 +21,30 @@ jobs:
         run: ruff check app scripts modal_app.py dev_server.py
       - name: Compile all Python
         run: python -m compileall -q app scripts modal_app.py dev_server.py
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      # The suite uses an in-memory SQLite fixture (tests/conftest.py), so no
+      # database service is needed. It previously failed against localhost:5432
+      # because four modules kept their own `engine` reference.
+      - name: Run tests
+        run: pytest tests -q
+      - name: Verify no committed credentials
+        run: |
+          # The Supabase anon key in public/auth.js is intentional and matches
+          # the publishable-key JWT shape, so it is allowlisted by path. Anything
+          # else that looks like a credential fails the build.
+          if git grep -nIE "(gsk_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|sb_secret_[A-Za-z0-9_-]{10,}|dodo_[A-Za-z0-9]{10,})" -- ':!*.lock'; then
+            echo "::error::credential-shaped literal found in a tracked file"
+            exit 1
+          fi
+          echo "no credential-shaped literals in tracked files"
