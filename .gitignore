@@ -59,6 +59,7 @@ r2_test_output.txt
 templates.json
 test_source_*.mp4
 tmppsnr_*.txt
+git-test.txt
 x*.md
 
 # Local AI-assistant workflow config. Personal tooling, not product code —
